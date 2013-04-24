@@ -37,6 +37,10 @@ static void send_irc_cmd(struct conn *c, char const *str, ...)
 	fflush(c->f);
 }
 
+
+/* general fmt of messages */
+/* :server_from number_status yournick :junk
+
 static void conn_cb(EV_P_ ev_io *w, int revents)
 {
 	char buf[2048];
@@ -55,7 +59,8 @@ static void conn_cb(EV_P_ ev_io *w, int revents)
 	}
 
 	if (r > 4 && !strncmp("PING", buf, r)) {
-		send_irc_cmd(c, "PING");
+		send_irc_cmd(c, "PONG");
+		puts("sent pong");
 	}
 
 	printf("> ");
