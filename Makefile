@@ -6,7 +6,7 @@ dirclean: clean
 	@$(MAKE) --no-print-directory -C ccan clean
 
 test : ccan
-obj-test = main.o penny/tcp.o
+obj-test = main.o
 TARGETS = test
 CFLAGS += -I. -Iccan
 LDFLAGS += -lev -lccan -Lccan

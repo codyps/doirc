@@ -1,13 +1,21 @@
 #include <stdio.h>
-#include <penny/tcp.h>
 #include <penny/print.h>
 #include <penny/penny.h>
-#include <ccan/container_of/container_of.h>
+
+
 #include <errno.h>
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
 #include <stdarg.h>
+
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
+
+#include <ccan/container_of/container_of.h>
+#include <ccan/net/net.h>
+#include <ccan/err/err.h>
 
 #include <ev.h>
 
@@ -80,25 +88,21 @@ static void irc_connect(struct conn *c)
 
 int main(int argc, char **argv)
 {
+	err_set_progname(argv[0]);
 	if (argc != 3) {
 		fprintf(stderr, "usage: %s <server> <port>\n", argv[0]);
 		return -1;
 	}
 
 
-	struct addrinfo *res;
-	int r = tcp_resolve_as_client(argv[1], argv[2], &res);
-	if (r) {
-		fprintf(stderr, "resolve failure, %s\n", gai_strerror(r));
-		return 1;
-	}
+	struct addrinfo *res =
+		net_client_lookup(argv[1], argv[2], AF_UNSPEC, SOCK_STREAM);
+	if (!res)
+		err(1, "resolve failure\n");
 
-	int fd = tcp_connect(res);
-	if (fd == -1) {
-		fprintf(stderr, "connection failed\n");
-		return 1;
-	}
-
+	int fd = net_connect(res);
+	if (fd == -1)
+		err(1, "connection failed\n");
 
 	struct conn conn;
 	conn.f = fdopen(fd, "a");
