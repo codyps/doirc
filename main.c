@@ -11,6 +11,8 @@
 
 #include <ev.h>
 
+#include "irc.h"
+
 struct conn {
 	ev_io w;
 	FILE *f;
@@ -39,7 +41,7 @@ static void send_irc_cmd(struct conn *c, char const *str, ...)
 
 
 /* general fmt of messages */
-/* :server_from number_status yournick :junk
+/* :server_from number_status yournick :junk */
 
 static void conn_cb(EV_P_ ev_io *w, int revents)
 {
