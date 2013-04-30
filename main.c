@@ -92,13 +92,29 @@ static void process_pkt(struct conn *c, char *start, size_t len)
 
 	if (*start == ':') {
 		/* the pkt starts with a nick or server name */
-
-		if (!c->server_name) {
-			/* Assume that the first message is from the server we
-			 * are connected to */
-			c->server_name = strdup(strsep(&start, " "));
+		char *next = memchr(start + 1, ' ', len - 1);
+		if (!next) {
+			warnx("invalid packet: couldn't locate a space after the first ':name'");
+			return;
 		}
 
+		if (++next - start > len) {
+			warnx("invalid packet: there is a space after the first ':name', but nothing following it.\n"
+				"\t%p %p %zu",
+					next, start, len);
+			return;
+		}
+
+		/* next now points to a status number or a command */
+		char *end = memchr(next, ' ', len - (next - start));
+		size_t cmd_len;
+
+		if (!end)
+			cmd_len = len - (next - start);
+		else
+			cmd_len = end - next;
+
+		printf("got cmd %.*s\n", cmd_len, next);
 		return;
 	}
 
@@ -193,7 +209,6 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-
 	struct addrinfo *res = net_client_lookup(argv[1], argv[2],
 			AF_UNSPEC, SOCK_STREAM);
 	if (!res)
@@ -202,6 +217,8 @@ int main(int argc, char **argv)
 	int fd = net_connect(res);
 	if (fd == -1)
 		err(1, "connection failed\n");
+
+	freeaddrinfo(res);
 
 	struct conn conn = {
 		.nick = "bye555",
