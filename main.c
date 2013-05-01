@@ -77,6 +77,18 @@ static void *memmem(const void *haystack, size_t haystacklen,
 	return NULL;
 }
 
+static void *memnchr(void const *data, int c, size_t data_len)
+{
+	char const *p = data;
+	while((size_t)(p - ((char const *)data)) < data_len) {
+		if (*p != c)
+			return (char *)p;
+		p++;
+	}
+
+	return NULL;
+}
+
 static bool memstarts(void const *data, size_t data_len,
 		void const *prefix, size_t prefix_len)
 {
@@ -85,40 +97,54 @@ static bool memstarts(void const *data, size_t data_len,
 	return !memcmp(data, prefix, prefix_len);
 }
 
-static void process_pkt(struct conn *c, char *start, size_t len)
+static char *irc_parse_prefix(char *start, size_t len, char **prefix, size_t *prefix_len)
 {
-	if (!len)
-		return;
-
-	if (*start == ':') {
-		/* the pkt starts with a nick or server name */
-		char *next = memchr(start + 1, ' ', len - 1);
-		if (!next) {
-			warnx("invalid packet: couldn't locate a space after the first ':name'");
-			return;
-		}
-
-		if (++next - start > len) {
-			warnx("invalid packet: there is a space after the first ':name', but nothing following it.\n"
-				"\t%p %p %zu",
-					next, start, len);
-			return;
-		}
-
-		/* next now points to a status number or a command */
-		char *end = memchr(next, ' ', len - (next - start));
-		size_t cmd_len;
-
-		if (!end)
-			cmd_len = len - (next - start);
-		else
-			cmd_len = end - next;
-
-		printf("got cmd %.*s\n", cmd_len, next);
-		return;
+	if (len <= 0 || *start != ':') {
+		*prefix = NULL;
+		*prefix_len = 0;
+		return start;
 	}
 
-	if (memstarts(start, len, "PING ", 5)) {
+	*prefix = start + 1;
+
+	/* the pkt starts with a nick or server name */
+	char *next = memchr(start + 1, ' ', len - 1);
+	if (!next) {
+		warnx("invalid packet: couldn't locate a space after the first ':name'");
+		return NULL;
+	}
+
+	*prefix_len = next - *prefix;
+
+	/* point to the thing after the space */
+	/* next + 1 :: skip the space we found with memchr */
+	return memnchr(next + 1, ' ', len - (next + 1 - start));
+}
+
+
+static int process_pkt(struct conn *c, char *start, size_t len)
+{
+	if (!len)
+		return -EMSGSIZE;
+
+	char *prefix;
+	size_t prefix_len;
+	char *command = irc_parse_prefix(start, len, &prefix, &prefix_len);
+
+	if (!command)
+		return -EINVAL;
+
+	char *remain = memchr(command + 1, ' ', len - (command + 1 - start));
+	size_t command_len = remain - command;
+	/* skip duplicate spaces */
+	remain = memnchr(remain + 1, ' ', len - (remain + 1 - start));
+
+	printf("prefix=\"%.*s\", command=\"%.*s\", remain=\"%.*s\"\n",
+			prefix_len, prefix,
+			command_len, command,
+			len - (remain - start), remain);
+
+	if (memstarts(command, command_len, "PING ", 5)) {
 		char *p = start + 5;
 		/* XXX: ensure @p has a server spec. */
 		send_irc_cmd(c, "PONG %.*s", (int)(len - 5), p);
