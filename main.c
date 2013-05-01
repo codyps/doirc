@@ -10,12 +10,14 @@
 
 #include <penny/print.h>
 #include <penny/penny.h>
+#include <penny/debug.h>
 
 #include <ccan/container_of/container_of.h>
 #include <ccan/net/net.h>
 #include <ccan/err/err.h>
 #include <ccan/compiler/compiler.h>
 #include <ccan/str/str.h>
+#include <ccan/array_size/array_size.h>
 
 #include <ev.h>
 
@@ -26,7 +28,7 @@ struct conn {
 
 	/* things the server could potentially change from what I set them to.
 	 */
-	int mode;
+	int user_mode;
 	const char *nick;
 
 	const char *server_name;
@@ -121,7 +123,12 @@ static char *irc_parse_prefix(char *start, size_t len, char **prefix, size_t *pr
 	return memnchr(next + 1, ' ', len - (next + 1 - start));
 }
 
+#define memeq(a, al, b, bl) (al == bl && !memcmp(a, b, bl))
 
+#define assign_goto(var, val, label) do { \
+		(var) = (val);		\
+		goto label;		\
+	} while (0)
 static int process_pkt(struct conn *c, char *start, size_t len)
 {
 	if (!len)
@@ -139,17 +146,53 @@ static int process_pkt(struct conn *c, char *start, size_t len)
 	/* skip duplicate spaces */
 	remain = memnchr(remain + 1, ' ', len - (remain + 1 - start));
 
-	printf("prefix=\"%.*s\", command=\"%.*s\", remain=\"%.*s\"\n",
+	pr_debug(1, "prefix=\"%.*s\", command=\"%.*s\", remain=\"%.*s\"\n",
 			prefix_len, prefix,
 			command_len, command,
 			len - (remain - start), remain);
 
-	if (memstarts(command, command_len, "PING ", 5)) {
-		char *p = start + 5;
-		/* XXX: ensure @p has a server spec. */
-		send_irc_cmd(c, "PONG %.*s", (int)(len - 5), p);
-		return;
+	if (isalpha(*command)) {
+		if (memeq(command, command_len, "PING", 4)) {
+			char *p = start + 5;
+			/* XXX: ensure @p has a server spec. */
+			send_irc_cmd(c, "PONG %.*s", (int)(len - 5), p);
+			return 0;
+		} else {
+			printf("unhandled command %.*s\n",
+					command_len, command);
+			return 1;
+		}
+	} else if (command_len == 3 && isdigit(*command)
+				&& isdigit(*(command+1))
+				&& isdigit(*(command+2))) {
+		char const *name;
+		int cmd_val = (*(command) - '0') * 100
+			+ (*(command + 1) - '0') * 10
+			+ (*(command + 2) - '0');
+		if (cmd_val >= ARRAY_SIZE(irc_num_cmds))
+			name = "(out of bounds)";
+		else
+			name = irc_num_cmds[cmd_val];
+
+		if (!name)
+			name = "(unknown)";
+
+		switch(cmd_val) {
+			case 372: /* MOTD */
+			case 376: /* ENDOFMOTD */
+			case 375: /* MOTDSTART */
+				return 0;
+			default:
+				printf("unhandled numeric command: %d %s\n",
+						cmd_val, name);
+				return 1;
+		}
+	} else {
+		warnx("invalid packet: unparsable command.");
+		return -EINVAL;
 	}
+
+	return 0;
 }
 
 /* general fmt of messages */
@@ -197,11 +240,12 @@ static void conn_cb(EV_P_ ev_io *w, int revents)
 
 		size_t len = end - start;
 
-		printf("> %zd ", len);
-		print_bytes_as_cstring(start, len, stdout);
-		putchar('\n');
-
-		process_pkt(c, start, len);
+		r = process_pkt(c, start, len);
+		if (r) {
+			printf("> %zd ", len);
+			print_bytes_as_cstring(start, len, stdout);
+			putchar('\n');
+		}
 
 		start = end + 2;
 		buf_len -= len + 2;

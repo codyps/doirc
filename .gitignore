@@ -1,4 +1,5 @@
 /.TRACK-*
 *.[oda]
+*.pyc
 
 /test
