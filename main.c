@@ -11,6 +11,7 @@
 #include <penny/print.h>
 #include <penny/penny.h>
 #include <penny/debug.h>
+#include <penny/mem.h>
 
 #include <ccan/container_of/container_of.h>
 #include <ccan/net/net.h>
@@ -61,44 +62,6 @@ static void send_irc_cmd(struct conn *c, char const *str, ...)
 	putchar('\n');
 }
 
-static void *memmem(const void *haystack, size_t haystacklen,
-	     const void *needle, size_t needlelen)
-{
-	const char *p, *last;
-	if (!haystacklen)
-		return NULL;
-
-	p = haystack;
-	last = p + haystacklen - needlelen;
-
-	do {
-		if (memcmp(p, needle, needlelen) == 0)
-			return (void *)p;
-	} while (p++ <= last);
-
-	return NULL;
-}
-
-static void *memnchr(void const *data, int c, size_t data_len)
-{
-	char const *p = data;
-	while((size_t)(p - ((char const *)data)) < data_len) {
-		if (*p != c)
-			return (char *)p;
-		p++;
-	}
-
-	return NULL;
-}
-
-static bool memstarts(void const *data, size_t data_len,
-		void const *prefix, size_t prefix_len)
-{
-	if (prefix_len > data_len)
-		return false;
-	return !memcmp(data, prefix, prefix_len);
-}
-
 static char *irc_parse_prefix(char *start, size_t len, char **prefix, size_t *prefix_len)
 {
 	if (len <= 0 || *start != ':') {
@@ -122,8 +85,6 @@ static char *irc_parse_prefix(char *start, size_t len, char **prefix, size_t *pr
 	/* next + 1 :: skip the space we found with memchr */
 	return memnchr(next + 1, ' ', len - (next + 1 - start));
 }
-
-#define memeq(a, al, b, bl) (al == bl && !memcmp(a, b, bl))
 
 #define assign_goto(var, val, label) do { \
 		(var) = (val);		\
@@ -267,8 +228,8 @@ static void irc_connect(struct conn *c)
 	if (c->pass)
 		send_irc_cmd(c, "PASS %s", c->pass);
 	send_irc_cmd(c, "NICK %s", c->nick);
-	send_irc_cmd(c, "USER %s %d %s %s", c->user, c->mode,
-			"ignore", c->realname);
+	send_irc_cmd(c, "USER %s hostname servername :%s",
+			c->user, c->realname);
 }
 
 int main(int argc, char **argv)
