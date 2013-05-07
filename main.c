@@ -19,20 +19,40 @@
 #include <ccan/compiler/compiler.h>
 #include <ccan/str/str.h>
 #include <ccan/array_size/array_size.h>
+#include <ccan/list/list.h>
 
 #include <ev.h>
 
 #include "irc.h"
+
+enum irc_user_mode {
+	IRC_UM_i = 1 << 0,
+	IRC_UM_w = 1 << 1,
+	IRC_UM_s = 1 << 2,
+	IRC_UM_o = 1 << 3,
+};
+
+enum irc_channel_user_mode {
+	IRC_CUM_v = 1 << 0,
+};
+
+enum irc_channel_mode {
+	IRC_CM_s = 1 << 0,
+};
 
 struct conn {
 	ev_io w;
 
 	/* things the server could potentially change from what I set them to.
 	 */
-	int user_mode;
-	const char *nick;
+	enum irc_user_mode user_mode;
 
+	const char *nick;
 	const char *server_name;
+
+	/* TODO: allow multiple channels. */
+	const char *channel;
+	int channel_mode;
 
 	/* We need these to connect, put them here. */
 	const char *realname;
@@ -62,6 +82,45 @@ static void send_irc_cmd(struct conn *c, char const *str, ...)
 	putchar('\n');
 }
 
+struct arg {
+	char *data;
+	size_t len;
+};
+
+static int irc_parse_args(char *start, size_t len, struct arg *args,
+		size_t max_args)
+{
+	size_t arg_pos = 0;
+	while (start && len && arg_pos < max_args) {
+		if (*start == ':') {
+			args[arg_pos].data = start;
+			args[arg_pos].len  = len;
+			return arg_pos + 1;
+		}
+
+		char *next = memchr(start + 1, ' ', len - 1);
+		if (!next) {
+			args[arg_pos].data = start;
+			args[arg_pos].len  = len;
+			return arg_pos + 1;
+		}
+
+		args[arg_pos].data = start;
+		args[arg_pos].len  = len - (next - start);
+
+		len -= next + 1 - start;
+		start = memnchr(next + 1, ' ', len);
+		arg_pos++;
+	}
+
+	if (len == 0)
+		return arg_pos;
+
+	warnx("parse failure: arg_pos=%zu len=%zu max_args=%zu\n", arg_pos, len, max_args);
+
+	return -1;
+}
+
 static char *irc_parse_prefix(char *start, size_t len, char **prefix, size_t *prefix_len)
 {
 	if (len <= 0 || *start != ':') {
@@ -86,10 +145,54 @@ static char *irc_parse_prefix(char *start, size_t len, char **prefix, size_t *pr
 	return memnchr(next + 1, ' ', len - (next + 1 - start));
 }
 
-#define assign_goto(var, val, label) do { \
-		(var) = (val);		\
-		goto label;		\
-	} while (0)
+#define irc_for_each_comma_arg(start, len, arg_start, arg_len) \
+	for (\
+		arg_start = start, \
+		arg_len = memchr_len(arg_start, ',', len - (arg_start - start));\
+		arg_len;\
+		arg_start += arg_len + 1,\
+		arg_len = memchr_len(arg_start, ',', len - (arg_start - start)))
+
+static int handle_privmsg(struct conn *c, char *start, size_t len)
+{
+	struct arg args[2];
+	int r = irc_parse_args(start, len, args, ARRAY_SIZE(args));
+	if (r != ARRAY_SIZE(args)) {
+		warnx("PRIVMSG requires exactly %zu arguments, got %d",
+				ARRAY_SIZE(args), r);
+		return -1;
+	}
+
+	char *arg_start;
+	size_t arg_len;
+	printf("privmsg recipients: ");
+	irc_for_each_comma_arg(args[0].data, args[0].len, arg_start, arg_len) {
+		printf("%.*s ", arg_len, arg_start);
+	}
+	putchar('\n');
+
+	printf("message contents: %.*s\n", args[1].len, args[1].data);
+
+	return 0;
+}
+
+static int handle_rpl_topic(struct conn *c, char *start, size_t len)
+{
+	struct arg args[3];
+	int r = irc_parse_args(start, len, args, ARRAY_SIZE(args));
+	if (r != ARRAY_SIZE(args)) {
+		warnx("RPL_TOPIC requires exactly %zu arguments, got %d",
+				ARRAY_SIZE(args), r);
+		return -1;
+	}
+
+	printf("topic set for \"%.*s\" in \"%.*s\" to \"%.*s\"\n",
+			args[0].len, args[0].data,
+			args[1].len, args[1].data,
+			args[2].len, args[2].data);
+	return 0;
+}
+
 static int process_pkt(struct conn *c, char *start, size_t len)
 {
 	if (!len)
@@ -106,19 +209,22 @@ static int process_pkt(struct conn *c, char *start, size_t len)
 	size_t command_len = remain - command;
 	/* skip duplicate spaces */
 	remain = memnchr(remain + 1, ' ', len - (remain + 1 - start));
+	size_t remain_len = len - (remain - start);
 
-	pr_debug(1, "prefix=\"%.*s\", command=\"%.*s\", remain=\"%.*s\"\n",
+	pr_debug(1, "prefix=\"%.*s\", command=\"%.*s\", remain=\"%.*s\"",
 			prefix_len, prefix,
 			command_len, command,
-			len - (remain - start), remain);
+			remain_len, remain);
 
 	if (isalpha(*command)) {
-		if (memeq(command, command_len, "PING", 4)) {
+		if (memeqstr(command, command_len, "PING")) {
 			char *p = start + 5;
 			/* XXX: ensure @p has a server spec. */
 			send_irc_cmd(c, "PONG %.*s", (int)(len - 5), p);
 			return 0;
-		} else {
+		} else if (memeqstr(command, command_len, "PRIVMSG"))
+			return handle_privmsg(c, remain, remain_len);
+		else {
 			printf("unhandled command %.*s\n",
 					command_len, command);
 			return 1;
@@ -127,7 +233,7 @@ static int process_pkt(struct conn *c, char *start, size_t len)
 				&& isdigit(*(command+1))
 				&& isdigit(*(command+2))) {
 		char const *name;
-		int cmd_val = (*(command) - '0') * 100
+		unsigned cmd_val = (*(command) - '0') * 100
 			+ (*(command + 1) - '0') * 10
 			+ (*(command + 2) - '0');
 		if (cmd_val >= ARRAY_SIZE(irc_num_cmds))
@@ -139,6 +245,8 @@ static int process_pkt(struct conn *c, char *start, size_t len)
 			name = "(unknown)";
 
 		switch(cmd_val) {
+			case 332: /* TOPIC */
+				return handle_rpl_topic(c, remain, remain_len);
 			case 372: /* MOTD */
 			case 376: /* ENDOFMOTD */
 			case 375: /* MOTDSTART */
@@ -230,6 +338,7 @@ static void irc_connect(struct conn *c)
 	send_irc_cmd(c, "NICK %s", c->nick);
 	send_irc_cmd(c, "USER %s hostname servername :%s",
 			c->user, c->realname);
+	send_irc_cmd(c, "JOIN %s", c->channel);
 }
 
 int main(int argc, char **argv)
@@ -255,6 +364,8 @@ int main(int argc, char **argv)
 		.nick = "bye555",
 		.user = "bye555",
 		.realname = "bye555",
+
+		.channel = "#botwar",
 	};
 
 	ev_io_init(&conn.w, conn_cb, fd, EV_READ);
