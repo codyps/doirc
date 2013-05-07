@@ -121,8 +121,6 @@ static int irc_parse_args(char const *start, size_t len, struct arg *args,
 	if (len == 0)
 		return arg_pos;
 
-	warnx("parse failure: arg_pos=%zu len=%zu max_args=%zu\n", arg_pos, len, max_args);
-
 	return -1;
 }
 
@@ -150,13 +148,28 @@ static char *irc_parse_prefix(char *start, size_t len, char **prefix, size_t *pr
 	return memnchr(next + 1, ' ', len - (next + 1 - start));
 }
 
-#define irc_for_each_comma_arg(start, len, arg_start, arg_len) \
-	for (\
-		arg_start = start, \
-		arg_len = memchr_len(arg_start, ',', len - (arg_start - start));\
-		arg_len;\
-		arg_start += arg_len + 1,\
-		arg_len = memchr_len(arg_start, ',', len - (arg_start - start)))
+static struct arg first_comma_arg(const char *start, const char *end)
+{
+	const char *arg_end = memchr(start, ',', end - start);
+	if (arg_end)
+		return (struct arg){ start, arg_end - start };
+	else
+		return (struct arg){ start, end - start };
+}
+
+static struct arg next_comma_arg(struct arg a, const char *end)
+{
+	if (a.data + a.len >= end)
+		return (struct arg) {0, 0};
+	else
+		return first_comma_arg(a.data + a.len + 1, end);
+}
+
+#define irc_for_each_comma_arg(arg, base_arg)		\
+	for (arg = first_comma_arg(base_arg.data, base_arg.data + base_arg.len);	\
+	     arg.len;	\
+	     arg = next_comma_arg(arg, base_arg.data + base_arg.len))
+
 
 static int handle_privmsg(struct conn *c, char *start, size_t len)
 {
@@ -168,11 +181,10 @@ static int handle_privmsg(struct conn *c, char *start, size_t len)
 		return -1;
 	}
 
-	const char *arg_start;
-	size_t arg_len;
 	printf("privmsg recipients: ");
-	irc_for_each_comma_arg(args[0].data, args[0].len, arg_start, arg_len) {
-		printf("%.*s ", arg_len, arg_start);
+	struct arg a;
+	irc_for_each_comma_arg(a, args[0]) {
+		printf("%.*s ", a.len, a.data);
 	}
 	putchar('\n');
 
