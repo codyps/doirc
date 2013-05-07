@@ -83,33 +83,38 @@ static void send_irc_cmd(struct conn *c, char const *str, ...)
 }
 
 struct arg {
-	char *data;
+	const char *data;
 	size_t len;
 };
 
-static int irc_parse_args(char *start, size_t len, struct arg *args,
+static int irc_parse_args(char const *start, size_t len, struct arg *args,
 		size_t max_args)
 {
 	size_t arg_pos = 0;
 	while (start && len && arg_pos < max_args) {
 		if (*start == ':') {
+			args[arg_pos].data = start + 1;
+			args[arg_pos].len  = len - 1;
+			return arg_pos + 1;
+		}
+
+		char *end_of_curr = memchr(start + 1, ' ', len - 1);
+		if (!end_of_curr) {
 			args[arg_pos].data = start;
 			args[arg_pos].len  = len;
 			return arg_pos + 1;
 		}
 
-		char *next = memchr(start + 1, ' ', len - 1);
-		if (!next) {
-			args[arg_pos].data = start;
-			args[arg_pos].len  = len;
-			return arg_pos + 1;
-		}
+		size_t len_of_curr = end_of_curr - start;
 
 		args[arg_pos].data = start;
-		args[arg_pos].len  = len - (next - start);
+		args[arg_pos].len  = len_of_curr;
 
-		len -= next + 1 - start;
-		start = memnchr(next + 1, ' ', len);
+		//len -= next + 1 - start;
+		char *start_of_next =
+			memnchr(end_of_curr + 1, ' ', len - len_of_curr - 1);
+		len -= start_of_next - start;
+		start = start_of_next;
 		arg_pos++;
 	}
 
@@ -163,7 +168,7 @@ static int handle_privmsg(struct conn *c, char *start, size_t len)
 		return -1;
 	}
 
-	char *arg_start;
+	const char *arg_start;
 	size_t arg_len;
 	printf("privmsg recipients: ");
 	irc_for_each_comma_arg(args[0].data, args[0].len, arg_start, arg_len) {
