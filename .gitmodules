@@ -4,3 +4,6 @@
 [submodule "ccan"]
 	path = ccan
 	url = https://github.com/rustyrussell/ccan.git
+[submodule "rbtree"]
+	path = rbtree
+	url = https://github.com/jmesmon/rbtree.git

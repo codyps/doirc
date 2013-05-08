@@ -1,12 +1,12 @@
 all::
 
 ccan: FORCE
-	@$(MAKE) --no-print-directory -C ccan
+	@$(MAKE) $(MAKEFLAGS) --no-print-directory -C ccan
 dirclean: clean
-	@$(MAKE) --no-print-directory -C ccan clean
+	@$(MAKE) $(MAKEFLAGS) --no-print-directory -C ccan clean
 
 test : ccan
-obj-test = main.o penny/debug.o
+obj-test = main.o penny/debug.o rbtree/rbtree.o
 TARGETS = test
 CFLAGS += -I. -Iccan
 LDFLAGS += -lev -lccan -Lccan
