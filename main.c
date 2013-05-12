@@ -35,58 +35,50 @@ enum irc_user_mode {
 
 enum irc_channel_user_mode {
 	IRC_CUM_v = 1 << 0,
+	IRC_CUM_o = 1 << 1,
 };
 
 enum irc_channel_mode {
 	IRC_CM_s = 1 << 0,
 };
 
-struct channel {
+struct user_in_channel {
+	char *name;
+	size_t name_len;
+	enum irc_channel_user_mode mode;
+};
+
+struct irc_channel {
 	struct list_node node;
 	const char *name;
 	size_t name_len;
-	int mode;
+	enum irc_channel_mode mode;
 };
 
 struct irc_client {
 	ev_io w;
 
-	/* things the server could potentially change from what I set them to.
-	 */
-	enum irc_user_mode user_mode;
+	/* network connection */
+	const char *server;
+	const char *port;
+	struct addrinfo *addr;
 
+	/* irc proto connection */
 	const char *nick;
-	const char *server_name;
-
-	/* TODO: allow multiple channels. */
-	struct list_head channels;
-
-	/* We need these to connect, put them here. */
 	const char *realname;
 	const char *user;
 	const char *pass;
 
+	/* state while connected */
+	enum irc_user_mode user_mode;
+	struct list_head channels;
+
+	/* buffers */
 	size_t in_pos;
 	char in_buf[2048];
 };
 
-#define irc_add_channel_(c, name) irc_add_channel(c, name, strlen(name))
-static int irc_add_channel(struct irc_client *c, char const *name, size_t name_len)
-{
-	struct channel *ch = malloc(sizeof(*ch));
-	if (!ch)
-		return -ENOMEM;
-
-	*ch = (typeof(*ch)) {
-		.name = name,
-		.name_len = name_len,
-	};
-
-	list_add(&c->channels, &ch->node);
-	return 0;
-}
-
-static void send_irc_cmd(struct irc_client *c, char const *str, ...)
+static void irc_send_cmd(struct irc_client *c, char const *str, ...)
 {
 	char buf[2048];
 	va_list va;
@@ -194,7 +186,9 @@ static struct arg next_comma_arg(struct arg a, const char *end)
 	     arg = next_comma_arg(arg, base_arg.data + base_arg.len))
 
 
-static int handle_privmsg(struct irc_client *c, char *start, size_t len)
+static int handle_privmsg(struct irc_client *c,
+		char *prefix, size_t prefix_len,
+		char *start, size_t len)
 {
 	struct arg args[2];
 	int r = irc_parse_args(start, len, args, ARRAY_SIZE(args));
@@ -213,13 +207,18 @@ static int handle_privmsg(struct irc_client *c, char *start, size_t len)
 
 	printf("message contents: %.*s\n", args[1].len, args[1].data);
 
+	if (memeqstr(args[1].data, args[1].len, "!op")) {
+		irc_set_channel_user_mode(c, 
+	}
+
+
 	return 0;
 }
 
-static struct channel *get_channel_by_name(struct irc_client *c,
+static struct irc_channel *get_channel_by_name(struct irc_client *c,
 		const char *name, size_t len)
 {
-	struct channel *ch;
+	struct irc_channel *ch;
 	list_for_each(&c->channels, ch, node) {
 		if (memeq(name, len, ch->name, ch->name_len))
 			return ch;
@@ -229,31 +228,62 @@ static struct channel *get_channel_by_name(struct irc_client *c,
 }
 
 static bool user_name_is_me(struct irc_client *c, const char *start, size_t len)
+
 {
 	return memeq(c->user, strlen(c->user), start, len);
 }
 
-static int handle_mode(struct irc_client *c, const char *start, size_t len)
+static int irc_set_channel_user_mode(struct irc_client *c,
+		struct irc_channel *ch, const char *name, size_t name_len,
+		enum irc_channel_user_mode mode)
+{
+	if (!(mode & IRC_CUM_o))
+		return 0;
+	irc_send_cmd(c, "MODE %.*s +o %.*s", ch->name_len, ch->name,
+			name_len, name);
+	return 0;
+}
+
+static int irc_clear_channel_user_mode(struct irc_client *c,
+		struct irc_channel *ch,
+		const char *name, size_t name_len,
+		enum irc_channel_user_mode mode)
+{
+	if (!(mode & IRC_CUM_o))
+		return 0;
+	irc_send_cmd(c, "MODE %.*s -o %.*s", ch->name_len, ch->name,
+			name_len, name);
+	return 0;
+}
+
+static int handle_mode(struct irc_client *c,
+		const char *prefix, size_t prefix_len,
+		const char *start, size_t len)
 {
 	struct arg args[3];
 	int r = irc_parse_args(start, len, args, ARRAY_SIZE(args));
+	/* TODO: support user modes (not channel modes) */
 	if (r != ARRAY_SIZE(args)) {
 		warnx("MODE requires exactly %zu arguments, got %d",
 				ARRAY_SIZE(args), r);
 		return -1;
 	}
 
-	struct channel *ch = get_channel_by_name(c, args[0].data, args[0].len);
+	struct irc_channel *ch = get_channel_by_name(c, args[0].data, args[0].len);
 	if (!ch) {
 		warnx("MODE refers to unknown channel %.*s",
 				args[0].len, args[0].data);
 		return -1;
 	}
 
+	if (*args[1].data == '-')
+		return 0;
+
+	/* FIXME: this is policy. Move to a callback */
 	bool me = user_name_is_me(c, args[2].data, args[2].len);
 	if (!me) {
-		send_irc_cmd(c, "MODE %.*s -o %.*s", ch->name_len, ch->name,
-				args[2].len, args[2].data);
+		irc_clear_channel_user_mode(c, ch, args[2].data, args[2].len,
+				IRC_CUM_o);
 	}
 
 	return 0;
@@ -278,6 +308,13 @@ static int handle_rpl_topic(struct irc_client *c, char *start, size_t len)
 			args[0].len, args[0].data,
 			args[1].len, args[1].data,
 			args[2].len, args[2].data);
+	return 0;
+}
+
+static int irc_invite(struct irc_client *c, char *nick, size_t nick_len,
+		char *chan, size_t chan_len)
+{
+	irc_send_cmd(c, "INVITE %.*s %.*s", nick, nick_len, chan, chan_len);
 	return 0;
 }
 
@@ -308,12 +345,12 @@ static int process_pkt(struct irc_client *c, char *start, size_t len)
 		if (memeqstr(command, command_len, "PING")) {
 			char *p = start + 5;
 			/* XXX: ensure @p has a server spec. */
-			send_irc_cmd(c, "PONG %.*s", (int)(len - 5), p);
+			irc_send_cmd(c, "PONG %.*s", (int)(len - 5), p);
 			return 0;
 		} else if (memeqstr(command, command_len, "PRIVMSG"))
-			return handle_privmsg(c, remain, remain_len);
+			return handle_privmsg(c, prefix, prefix_len, remain, remain_len);
 		else if (memeqstr(command, command_len, "MODE"))
-			return handle_mode(c, remain, remain_len);
+			return handle_mode(c, prefix, prefix_len, remain, remain_len);
 		else {
 			printf("unhandled command %.*s\n",
 					command_len, command);
@@ -423,17 +460,96 @@ static void conn_cb(EV_P_ ev_io *w, int revents)
 #endif
 }
 
-static void irc_connect(struct irc_client *c)
+static int _irc_add_channel(struct irc_client *c, char const *name, size_t name_len)
+{
+	struct irc_channel *ch = malloc(sizeof(*ch));
+	if (!ch)
+		return -ENOMEM;
+
+	*ch = (typeof(*ch)) {
+		.name = name,
+		.name_len = name_len,
+	};
+
+	list_add(&c->channels, &ch->node);
+	return 0;
+}
+
+static int irc_send_join(struct irc_client *c,
+		char const *name, size_t name_len)
+{
+	irc_send_cmd(c, "JOIN %.*s", name, name_len);
+	return 0;
+}
+
+static bool irc_is_connected(struct irc_client *c)
+{
+	return ev_is_active(&c->w);
+}
+
+#define irc_join_(c, n) irc_join(c, n, strlen(n))
+static int irc_join(struct irc_client *c, char const *name, size_t name_len)
+{
+	int r = _irc_add_channel(c, name, name_len);
+	if (r)
+		return -1;
+
+	if (irc_is_connected(c)) {
+		return irc_send_join(c, name, name_len);
+	} else {
+		return 1;
+	}
+}
+
+static void irc_proto_connect(struct irc_client *c)
 {
 	if (c->pass)
-		send_irc_cmd(c, "PASS %s", c->pass);
-	send_irc_cmd(c, "NICK %s", c->nick);
-	send_irc_cmd(c, "USER %s hostname servername :%s",
+		irc_send_cmd(c, "PASS %s", c->pass);
+	irc_send_cmd(c, "NICK %s", c->nick);
+	irc_send_cmd(c, "USER %s hostname servername :%s",
 			c->user, c->realname);
-	struct channel *chan;
+	struct irc_channel *chan;
 	list_for_each(&c->channels, chan, node) {
-		send_irc_cmd(c, "JOIN %s", chan->name);
+		irc_send_cmd(c, "JOIN %s", chan->name);
 	}
+}
+
+/*
+ * return:
+ *	a non-negative file descriptor on success
+ *	-1 if dns resolution failed
+ *	-2 if connection failed
+ */
+static int irc_net_connect(struct irc_client *c)
+{
+	/* TODO: use cached dns info? */
+	struct addrinfo *res = net_client_lookup(c->server, c->port,
+			AF_UNSPEC, SOCK_STREAM);
+	if (!res)
+		return -1;
+
+	int fd = net_connect(res);
+	if (fd == -1)
+		return -2;
+
+	freeaddrinfo(res);
+
+	/* FIXME: avoid depending on libev */
+	ev_io_init(&c->w, conn_cb, fd, EV_READ);
+	ev_io_start(EV_DEFAULT_ &c->w);
+
+	return fd;
+}
+
+static int irc_connect(struct irc_client *c)
+{
+	int fd = irc_net_connect(c);
+	if (fd < 0)
+		return fd;
+
+	irc_proto_connect(c);
+
+	return fd;
 }
 
 int main(int argc, char **argv)
@@ -444,30 +560,19 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-	struct addrinfo *res = net_client_lookup(argv[1], argv[2],
-			AF_UNSPEC, SOCK_STREAM);
-	if (!res)
-		err(1, "resolve failure\n");
-
-	int fd = net_connect(res);
-	if (fd == -1)
-		err(1, "connection failed\n");
-
-	freeaddrinfo(res);
-
 	struct irc_client c = {
+		.server = argv[1],
+		.port   = argv[2],
+
 		.nick = "bye555",
 		.user = "bye555",
 		.realname = "bye555",
 		.channels = LIST_HEAD_INIT(c.channels)
 	};
-	irc_add_channel_(&c, "#botwar");
-
-	ev_io_init(&c.w, conn_cb, fd, EV_READ);
-	ev_io_start(EV_DEFAULT, &c.w);
-
+	irc_join_(&c, "#botwar");
 	irc_connect(&c);
 
-	ev_run(EV_DEFAULT, 0);
+
+	ev_run(EV_DEFAULT_ 0);
 	return 0;
 }
