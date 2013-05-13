@@ -25,8 +25,23 @@
 #include <ev.h>
 
 #include "irc.h"
+int irc_cmd(struct irc_connection *c,
+		char const *msg, size_t msg_len)
+{
+	ssize_t r = write(c->w.fd, msg, msg_len);
+	if (r != msg_len)
+		return (r < 0)?r:-1;
 
-int irc_cmd(struct irc_connection *c, char const *str, ...)
+	if (debug_is(1)) {
+		printf("< %zd ", r);
+		print_bytes_as_cstring(msg, r, stdout);
+		putchar('\n');
+	}
+
+	return 0;
+}
+
+int irc_cmd_fmt(struct irc_connection *c, char const *str, ...)
 {
 	char buf[1024];
 	va_list va;
@@ -36,17 +51,29 @@ int irc_cmd(struct irc_connection *c, char const *str, ...)
 	buf[sz++] = '\r';
 	buf[sz++] = '\n';
 
-	ssize_t r = write(c->w.fd, buf, sz);
-	if (r != sz)
-		return (r < 0)?r:-1;
+	return irc_cmd(c, buf, sz);
+}
 
-	if (debug_level() > 0) {
-		printf("< %zd ", r);
-		print_bytes_as_cstring(buf, r, stdout);
-		putchar('\n');
-	}
+int irc_cmd_privmsg_fmt(struct irc_connection *c,
+		char const *dest, size_t dest_len,
+		char const *msg_fmt, ...)
+{
+	char buf[1024];
+	va_list va;
+	va_start(va, msg_fmt);
 
-	return 0;
+	size_t sz = snprintf(buf, sizeof(buf), "PRIVMSG %.*s :", dest_len, dest);
+	if (sz >= sizeof(buf))
+		return -1;
+	sz += vsnprintf(buf + sz, sizeof(buf) - sz - 2, msg_fmt, va);
+	va_end(va);
+	if (sz >= sizeof(buf))
+		return -1;
+
+	buf[sz++] = '\r';
+	buf[sz++] = '\n';
+
+	return irc_cmd(c, buf, sz);
 }
 
 static int irc_parse_args(char const *start, size_t len, struct arg *args,
@@ -110,6 +137,23 @@ static char *irc_parse_prefix(char *start, size_t len, char **prefix, size_t *pr
 	return memnchr(next + 1, ' ', len - (next + 1 - start));
 }
 
+void irc_address_parts(const char *addr, size_t addr_len,
+		const char **nick, size_t *nick_len,
+		const char **user, size_t *user_len,
+		const char **host, size_t *host_len)
+{
+	const char *maybe_nick_end = memchr(addr, '!', addr_len);
+	if (maybe_nick_end) {
+		*nick = addr;
+		*nick_len = maybe_nick_end - addr;
+	} else {
+		*nick = NULL;
+		*nick_len = 0;
+	}
+
+
+}
+
 static struct arg first_comma_arg(const char *start, const char *end)
 {
 	const char *arg_end = memchr(start, ',', end - start);
@@ -147,8 +191,10 @@ static int handle_privmsg(struct irc_connection *c,
 
 	pr_debug(1, "privmsg recipients: ");
 	struct arg a;
+	struct arg dest;
 	irc_for_each_comma_arg(a, args[0]) {
 		pr_debug(1, "%.*s ", a.len, a.data);
+		dest = a;
 	}
 	pr_debug(1, "\n");
 
@@ -157,12 +203,11 @@ static int handle_privmsg(struct irc_connection *c,
 	/* FIXME: we only pass the last recipient */
 	if (c->cb.privmsg)
 		c->cb.privmsg(c, prefix, prefix_len,
-			a.data, a.len,
+			dest.data, dest.len,
 			args[1].data, args[1].len);
 
 	return 0;
 }
-
 bool irc_user_is_me(struct irc_connection *c, const char *start, size_t len)
 
 {
@@ -176,7 +221,7 @@ int irc_set_channel_user_mode(struct irc_connection *c,
 {
 	if (!(mode & IRC_CUM_o))
 		return 0;
-	irc_cmd(c, "MODE %.*s +o %.*s", channel_len, channel,
+	irc_cmd_fmt(c, "MODE %.*s +o %.*s", channel_len, channel,
 			name_len, name);
 	return 0;
 }
@@ -188,7 +233,7 @@ int irc_clear_channel_user_mode(struct irc_connection *c,
 {
 	if (!(mode & IRC_CUM_o))
 		return 0;
-	irc_cmd(c, "MODE %.*s -o %.*s", channel_len, channel,
+	irc_cmd_fmt(c, "MODE %.*s -o %.*s", channel_len, channel,
 			name_len, name);
 	return 0;
 }
@@ -238,7 +283,7 @@ int irc_cmd_invite(struct irc_connection *c,
 		char const *nick, size_t nick_len,
 		char const *chan, size_t chan_len)
 {
-	irc_cmd(c, "INVITE %.*s %.*s", nick, nick_len, chan, chan_len);
+	irc_cmd_fmt(c, "INVITE %.*s %.*s", nick_len, nick, chan_len, chan);
 	return 0;
 }
 
@@ -267,9 +312,11 @@ static int process_pkt(struct irc_connection *c, char *start, size_t len)
 
 	if (isalpha(*command)) {
 		if (memeqstr(command, command_len, "PING")) {
+			if (c->cb.ping)
+				c->cb.ping(c);
 			char *p = start + 5;
 			/* XXX: ensure @p has a server spec. */
-			irc_cmd(c, "PONG %.*s", (int)(len - 5), p);
+			irc_cmd_fmt(c, "PONG %.*s", (int)(len - 5), p);
 			return 0;
 		} else if (memeqstr(command, command_len, "PRIVMSG"))
 			return handle_privmsg(c, prefix, prefix_len, remain, remain_len);
@@ -296,6 +343,10 @@ static int process_pkt(struct irc_connection *c, char *start, size_t len)
 			name = "(unknown)";
 
 		switch(cmd_val) {
+			case RPL_WELCOME:
+				if (c->cb.connect)
+					c->cb.connect(c);
+				break;
 			case 353: /* NAMREPLY */
 				return handle_rpl_namreply(c, remain, remain_len);
 			case 332: /* TOPIC */
@@ -387,8 +438,7 @@ static void conn_cb(EV_P_ ev_io *w, int revents)
 int irc_cmd_join(struct irc_connection *c,
 		char const *name, size_t name_len)
 {
-	irc_cmd(c, "JOIN %.*s", name, name_len);
-	return 0;
+	return irc_cmd_fmt(c, "JOIN %.*s", name_len, name);
 }
 
 bool irc_is_connected(struct irc_connection *c)
@@ -399,9 +449,9 @@ bool irc_is_connected(struct irc_connection *c)
 static void irc_proto_connect(struct irc_connection *c)
 {
 	if (c->pass)
-		irc_cmd(c, "PASS %s", c->pass);
-	irc_cmd(c, "NICK %s", c->nick);
-	irc_cmd(c, "USER %s hostname servername :%s",
+		irc_cmd_fmt(c, "PASS %s", c->pass);
+	irc_cmd_fmt(c, "NICK %s", c->nick);
+	irc_cmd_fmt(c, "USER %s hostname servername :%s",
 			c->user, c->realname);
 }
 

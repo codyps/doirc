@@ -3,6 +3,8 @@
 #include <ccan/compiler/compiler.h>
 #include <ccan/err/err.h>
 
+#include <penny/mem.h>
+
 #include <stdio.h>
 
 static int on_privmsg(struct irc_connection *c,
@@ -10,6 +12,10 @@ static int on_privmsg(struct irc_connection *c,
 		char const *dest, size_t dest_len,
 		char const *msg, size_t msg_len)
 {
+	if (memeqstr(msg, msg_len, ",hi")) {
+		irc_cmd_privmsg_fmt(c, dest, dest_len,
+				"HI, %.*s", src_len, src);
+	}
 	return 0;
 }
 
@@ -59,6 +65,7 @@ int main(int argc, char **argv)
 			.privmsg = on_privmsg,
 			.join = on_join,
 			.part = on_part,
+			.kick = on_kick,
 		},
 	};
 	irc_connect(&c);

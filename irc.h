@@ -5,6 +5,8 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include <ccan/compiler/compiler.h>
+
 #include <ev.h>
 
 enum irc_num_cmds {
@@ -56,13 +58,16 @@ struct irc_conn_cb {
 			char const *ch, size_t ch_len);
 	int (*part)(struct irc_connection *c,
 			char const *ch, size_t ch_len);
+	int (*kick)(struct irc_connection *c,
+			char const *ch, size_t ch_len,
+			char const *nick, size_t nick_len,
+			char const *reason, size_t reason_len);
 
 	int (*ping)(struct irc_connection *c);
 
 	/* connection lifecycle */
 	int (*connect)(struct irc_connection *c);
 	int (*disconnect)(struct irc_connection *c);
-
 };
 
 struct irc_connection {
@@ -92,10 +97,18 @@ struct irc_connection {
 };
 
 /* for use in callbacks */
-int irc_cmd(struct irc_connection *c, char const *str, ...);
+int irc_cmd(struct irc_connection *c,
+		char const *msg, size_t msg_len);
 int irc_cmd_privmsg(struct irc_connection *c,
 		char const *dest, size_t dest_len,
 		char const *msg,  size_t msg_len);
+
+int PRINTF_FMT(2,3) irc_cmd_fmt(struct irc_connection *c,
+		char const *str, ...);
+int PRINTF_FMT(4,5) irc_cmd_privmsg_fmt(struct irc_connection *c,
+		char const *dest, size_t dest_len,
+		char const *msg_fmt, ...);
+
 #define irc_cmd_join_(c, n) irc_cmd_join(c, n, strlen(n))
 int irc_cmd_join(struct irc_connection *c,
 		char const *name, size_t name_len);
