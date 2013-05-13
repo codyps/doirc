@@ -1,0 +1,6 @@
+
+
+= Structure =
+
+'irc_session'
+	'irc_connection'
