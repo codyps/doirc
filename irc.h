@@ -46,9 +46,10 @@ struct irc_connection;
 struct irc_conn_cb {
 	int (*privmsg)(struct irc_connection *c,
 			char const *source, size_t source_len,
-			char const *dest, size_t dest_len,
+			struct arg *dests, size_t dest_ct,
 			char const *msg, size_t msg_len);
 
+	/* FIXME: divide types of modes */
 	int (*mode)(struct irc_connection *c,
 			char const *source, size_t source_len,
 			struct arg *args, int arg_ct);
@@ -59,6 +60,7 @@ struct irc_conn_cb {
 	int (*part)(struct irc_connection *c,
 			char const *ch, size_t ch_len);
 	int (*kick)(struct irc_connection *c,
+			char const *kicker, size_t kicker_len,
 			char const *ch, size_t ch_len,
 			char const *nick, size_t nick_len,
 			char const *reason, size_t reason_len);

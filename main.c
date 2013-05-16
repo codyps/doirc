@@ -9,11 +9,11 @@
 
 static int on_privmsg(struct irc_connection *c,
 		char const *src, size_t src_len,
-		char const *dest, size_t dest_len,
+		struct arg *dests, size_t dest_ct,
 		char const *msg, size_t msg_len)
 {
 	if (memeqstr(msg, msg_len, ",hi")) {
-		irc_cmd_privmsg_fmt(c, dest, dest_len,
+		irc_cmd_privmsg_fmt(c, dests[0].data, dests[0].len,
 				"HI, %.*s", src_len, src);
 	}
 	return 0;
@@ -28,6 +28,16 @@ static int on_join(struct irc_connection *c,
 static int on_part(struct irc_connection *c,
 		char const *ch, size_t ch_len)
 {
+	return 0;
+}
+
+static int on_kick(UNUSED struct irc_connection *c,
+		char const *kicker, size_t kicker_len,
+		char const *chan, size_t chan_len,
+		char const *nick, size_t nick_len,
+		char const *reason, size_t reason_len)
+{
+	printf("someone was kicked\n");
 	return 0;
 }
 

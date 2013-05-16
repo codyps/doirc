@@ -24,6 +24,13 @@
 
 #include <ev.h>
 
+/* types of warnings
+ * - malformed protocol input
+ * - buffer overflow outputs
+ * - informational buffer & message printouts
+ * - information about the parsed message
+ */
+
 #include "irc.h"
 int irc_cmd(struct irc_connection *c,
 		char const *msg, size_t msg_len)
@@ -32,7 +39,7 @@ int irc_cmd(struct irc_connection *c,
 	if (r != msg_len)
 		return (r < 0)?r:-1;
 
-	if (debug_is(1)) {
+	if (debug_is(2)) {
 		printf("< %zd ", r);
 		print_bytes_as_cstring(msg, r, stdout);
 		putchar('\n');
@@ -47,6 +54,10 @@ int irc_cmd_fmt(struct irc_connection *c, char const *str, ...)
 	va_list va;
 	va_start(va, str);
 	ssize_t sz = vsnprintf(buf, sizeof(buf) - 2, str, va);
+	if (sz >= sizeof(buf) - 2) {
+		pr_debug(1, "oversized irc_cmd_fmt, dropping.");
+		return -1;
+	}
 	va_end(va);
 	buf[sz++] = '\r';
 	buf[sz++] = '\n';
@@ -63,17 +74,20 @@ int irc_cmd_privmsg_fmt(struct irc_connection *c,
 	va_start(va, msg_fmt);
 
 	size_t sz = snprintf(buf, sizeof(buf), "PRIVMSG %.*s :", dest_len, dest);
-	if (sz >= sizeof(buf))
-		return -1;
-	sz += vsnprintf(buf + sz, sizeof(buf) - sz - 2, msg_fmt, va);
+	if (sz >= sizeof(buf) - 2)
+		goto overflow;
+	sz += vsnprintf(buf + sz, sizeof(buf) - sz, msg_fmt, va);
 	va_end(va);
-	if (sz >= sizeof(buf))
-		return -1;
+	if (sz >= sizeof(buf) - 2)
+		goto overflow;
 
 	buf[sz++] = '\r';
 	buf[sz++] = '\n';
 
 	return irc_cmd(c, buf, sz);
+overflow:
+	pr_debug(1, "oversized irc_cmd_privmsg_fmt, dropping.");
+	return -1;
 }
 
 static int irc_parse_args(char const *start, size_t len, struct arg *args,
@@ -99,7 +113,6 @@ static int irc_parse_args(char const *start, size_t len, struct arg *args,
 		args[arg_pos].data = start;
 		args[arg_pos].len  = len_of_curr;
 
-		//len -= next + 1 - start;
 		char *start_of_next =
 			memnchr(end_of_curr + 1, ' ', len - len_of_curr - 1);
 		len -= start_of_next - start;
@@ -126,7 +139,7 @@ static char *irc_parse_prefix(char *start, size_t len, char **prefix, size_t *pr
 	/* the pkt starts with a nick or server name */
 	char *next = memchr(start + 1, ' ', len - 1);
 	if (!next) {
-		warnx("invalid packet: couldn't locate a space after the first ':name'");
+		pr_debug(0, "invalid packet: couldn't locate a space after the first ':name'");
 		return NULL;
 	}
 
@@ -137,7 +150,7 @@ static char *irc_parse_prefix(char *start, size_t len, char **prefix, size_t *pr
 	return memnchr(next + 1, ' ', len - (next + 1 - start));
 }
 
-void irc_address_parts(const char *addr, size_t addr_len,
+static void irc_address_parts(const char *addr, size_t addr_len,
 		const char **nick, size_t *nick_len,
 		const char **user, size_t *user_len,
 		const char **host, size_t *host_len)
@@ -151,7 +164,7 @@ void irc_address_parts(const char *addr, size_t addr_len,
 		*nick_len = 0;
 	}
 
-
+	/* FIXME: unfinished */
 }
 
 static struct arg first_comma_arg(const char *start, const char *end)
@@ -184,26 +197,37 @@ static int handle_privmsg(struct irc_connection *c,
 	struct arg args[2];
 	int r = irc_parse_args(start, len, args, ARRAY_SIZE(args));
 	if (r != ARRAY_SIZE(args)) {
-		warnx("PRIVMSG requires exactly %zu arguments, got %d",
+		pr_debug(0, "PRIVMSG requires exactly %zu arguments, got %d",
 				ARRAY_SIZE(args), r);
 		return -1;
 	}
 
-	pr_debug(1, "privmsg recipients: ");
+	pr_debug(2, "privmsg recipients: ");
 	struct arg a;
-	struct arg dest;
+	size_t dest_ct = 0;
+	struct arg *dests;
 	irc_for_each_comma_arg(a, args[0]) {
-		pr_debug(1, "%.*s ", a.len, a.data);
-		dest = a;
+		pr_debug(2, ":: %.*s ", a.len, a.data);
+		/* HAHAHA */
+		dests = alloca(sizeof(*dests));
+		*dests = a;
+		dest_ct ++;
 	}
-	pr_debug(1, "\n");
+	pr_debug(2, "\n");
 
-	pr_debug(1, "message contents: %.*s\n", args[1].len, args[1].data);
+	if (!dests) {
+		pr_debug(0, "PRIVMSG: no destinations, ignoring.");
+		return -1;
+	}
+	/* OH GOD MY SIDES */
+	dests -= dest_ct - 1;
+
+	pr_debug(2, "message contents: %.*s\n", args[1].len, args[1].data);
 
 	/* FIXME: we only pass the last recipient */
 	if (c->cb.privmsg)
 		c->cb.privmsg(c, prefix, prefix_len,
-			dest.data, dest.len,
+			dests, dest_ct,
 			args[1].data, args[1].len);
 
 	return 0;
@@ -242,18 +266,36 @@ static int handle_mode(struct irc_connection *c,
 		const char *prefix, size_t prefix_len,
 		const char *start, size_t len)
 {
-	struct arg args[3];
+	struct arg args[4];
 	int r = irc_parse_args(start, len, args, ARRAY_SIZE(args));
-	/* TODO: support user modes (not channel modes) */
-	if (r != ARRAY_SIZE(args)) {
-		warnx("MODE requires exactly %zu arguments, got %d",
-				ARRAY_SIZE(args), r);
+	if (r < 1) {
+		pr_debug(-1, "MODE: could not parse args: %d", r);
 		return -1;
 	}
 
 	if (c->cb.mode)
 		c->cb.mode(c, prefix, prefix_len,
 				args, r);
+	return 0;
+}
+
+static int handle_kick(struct irc_connection *c,
+		const char *prefix, size_t prefix_len,
+		const char *start, size_t len)
+{
+	struct arg args[3];
+	int r = irc_parse_args(start, len, args, ARRAY_SIZE(args));
+	if (r != ARRAY_SIZE(args)) {
+		pr_debug(-1, "KICK: could not parse args: %d", r);
+		return -1;
+	}
+
+	if (c->cb.kick)
+		c->cb.kick(c,	prefix, prefix_len,
+				args[0].data, args[0].len,
+				args[1].data, args[1].len,
+				args[2].data, args[2].len);
+
 	return 0;
 }
 
@@ -322,6 +364,8 @@ static int process_pkt(struct irc_connection *c, char *start, size_t len)
 			return handle_privmsg(c, prefix, prefix_len, remain, remain_len);
 		else if (memeqstr(command, command_len, "MODE"))
 			return handle_mode(c, prefix, prefix_len, remain, remain_len);
+		else if (memeqstr(command, command_len, "KICK"))
+			return handle_kick(c, prefix, prefix_len, remain, remain_len);
 		else {
 			printf("unhandled command %.*s\n",
 					command_len, command);
