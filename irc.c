@@ -399,6 +399,7 @@ static int process_pkt(struct irc_connection *c, char *start, size_t len)
 			case 376: /* ENDOFMOTD */
 			case 375: /* MOTDSTART */
 				return 0;
+			case 474: /* JOIN FAILURE */
 			default:
 				printf("unhandled numeric command: %d %s\n",
 						cmd_val, name);

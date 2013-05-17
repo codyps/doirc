@@ -12,9 +12,10 @@ static int on_privmsg(struct irc_connection *c,
 		struct arg *dests, size_t dest_ct,
 		char const *msg, size_t msg_len)
 {
+	const char *name_end = memchr(src, '!', src_len);
 	if (memeqstr(msg, msg_len, ",hi")) {
 		irc_cmd_privmsg_fmt(c, dests[0].data, dests[0].len,
-				"HI, %.*s", src_len, src);
+				"HI, %.*s", name_end - src, src);
 	}
 	return 0;
 }
@@ -31,13 +32,17 @@ static int on_part(struct irc_connection *c,
 	return 0;
 }
 
-static int on_kick(UNUSED struct irc_connection *c,
+static int on_kick(struct irc_connection *c,
 		char const *kicker, size_t kicker_len,
 		char const *chan, size_t chan_len,
 		char const *nick, size_t nick_len,
 		char const *reason, size_t reason_len)
 {
-	printf("someone was kicked\n");
+	if (irc_user_is_me(c, nick, nick_len)) {
+		printf("I was kicked from %.*s because \"%.*s\" rejoin\n",
+				chan_len, chan, reason_len, reason);
+		irc_cmd_join(c, chan, chan_len);
+	}
 	return 0;
 }
 
