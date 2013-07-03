@@ -36,7 +36,7 @@ int irc_cmd(struct irc_connection *c,
 		char const *msg, size_t msg_len)
 {
 	ssize_t r = write(c->w.fd, msg, msg_len);
-	if (r != msg_len)
+	if ((size_t)r != msg_len)
 		return (r < 0)?r:-1;
 
 	if (debug_is(2)) {
@@ -54,7 +54,9 @@ int irc_cmd_fmt(struct irc_connection *c, char const *str, ...)
 	va_list va;
 	va_start(va, str);
 	ssize_t sz = vsnprintf(buf, sizeof(buf) - 2, str, va);
-	if (sz >= sizeof(buf) - 2) {
+	if (sz < 0)
+		return -1;
+	if ((size_t)sz >= sizeof(buf) - 2) {
 		pr_debug(1, "oversized irc_cmd_fmt, dropping.");
 		return -1;
 	}
