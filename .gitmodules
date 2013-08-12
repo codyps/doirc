@@ -3,7 +3,7 @@
 	url = https://github.com/jmesmon/libpenny.git
 [submodule "ccan"]
 	path = ccan
-	url = https://github.com/rustyrussell/ccan.git
+	url = https://github.com/jmesmon/ccan.git
 [submodule "rbtree"]
 	path = rbtree
 	url = https://github.com/jmesmon/rbtree.git
