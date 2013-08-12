@@ -1,10 +1,33 @@
-## base.mk: 2807b2a+, see https://github.com/jmesmon/trifles.git
+## base.mk: 31d5ac0+, see https://github.com/jmesmon/trifles.git
 # Usage:
 #
-# == For use by the one who runs 'make' ==
+# == Targets ==
+# 'all'
+# $(TARGETS)
+# show-cflags		Set the var FILE=some-c-file.c to see cflags for a
+#                       particular file
+# show-targets
+# install
+# clean
+# TARGET.clean
+# TARGET.install
+#
+# == For use by the one who runs 'make' (or in some cases the Makefile) ==
+# $(O)		    set to a directory to write build output to that directory
 # $(V)              when defined, prints the commands that are run.
 # $(CFLAGS)         expected to be overridden by the user or build system.
 # $(LDFLAGS)        same as CFLAGS, except for LD.
+# $(ASFLAGS)
+# $(CXXFLAGS)
+#
+# $(CROSS_COMPILE)  a prefix on $(CC) and other tools.
+#                   "CROSS_COMPILE=arm-linux-" (note the trailing '-')
+# $(CC)
+# $(CXX)
+# $(LD)
+# $(AS)
+# $(FLEX)
+# $(BISON)
 #
 # == Required in the makefile ==
 # all::		    place this target at the top.
@@ -21,11 +44,20 @@
 #
 #			sometarget: ALL_LDFLAGS += -lrt
 #
-# $(CROSS_COMPILE)  a prefix on gcc. "CROSS_COMPILE=arm-linux-" (note the trailing '-')
+#		    Note that in some cases (none I can point out, I just find
+#		    this shifty) this usage could have unintended consequences
+#		    (such as some of the ldflags being passed to other link
+#		    commands). The use of $(ldflags-sometarget) is recommended
+#		    instead.
 #
 # $(ldflags-sometarget)
 # $(cflags-someobject)
 # $(cxxflags-someobject)
+#
+# OBJ_TRASH		$(1) expands to the object. Expanded for every object.
+# TARGET_TRASH		$* expands to the target. Expanded for every target.
+# TRASH
+# BIN_EXT		Add an extention to each binary produced (.elf, .exe)
 #
 # == How to use with FLEX + BISON support ==
 #
@@ -40,26 +72,27 @@
 # - install disable per target.
 # - flag tracking per target.'.obj.o.cmd'
 # - profile guided optimization support.
-# - output directory support ("make O=blah")
 # - build with different flags placed into different output directories.
 # - library building (shared & static)
 # - per-target CFLAGS (didn't I hack this in already?)
 # - will TARGETS always be outputs from Linking?
+# - continous build mechanism ('watch' is broken)
 
 # Delete the default suffixes
 .SUFFIXES:
 
 O = .
-#VPATH = $(O)
-$(foreach target,$(TARGETS),$(eval vpath $(target) $(O)))
+BIN_TARGETS=$(addprefix $(O)/,$(addsuffix $(BIN_EXT),$(TARGETS)))
 
 .PHONY: all FORCE
-all:: $(TARGETS)
+all:: $(BIN_TARGETS)
 
-# FIXME: overriding in Makefile is tricky
+# FIXME: overriding these in a Makefile while still allowing the user to
+# override them is tricky.
 CC    = $(CROSS_COMPILE)gcc
 CXX   = $(CROSS_COMPILE)g++
 LD    = $(CC)
+AS    = $(CC)
 RM    = rm -f
 FLEX  = flex
 BISON = bison
@@ -70,14 +103,14 @@ else
 OPT=-Os
 endif
 
-ifndef NO_LTO
-ALL_CFLAGS  ?= -flto
-ALL_LDFLAGS ?= $(ALL_CFLAGS) $(OPT) -fuse-linker-plugin
-else
-ALL_CFLAGS ?= $(OPT)
-endif
+DBG_FLAGS = -ggdb3
 
-ALL_CFLAGS += -ggdb3
+ifndef NO_LTO
+CFLAGS  ?= -flto $(DBG_FLAGS)
+LDFLAGS ?= $(ALL_CFLAGS) $(OPT) -fuse-linker-plugin
+else
+CFLAGS  ?= $(OPT) $(DBG_FLAGS)
+endif
 
 COMMON_CFLAGS += -Wall
 COMMON_CFLAGS += -Wundef -Wshadow
@@ -96,7 +129,10 @@ ALL_CFLAGS   += $(COMMON_CFLAGS) $(CFLAGS)
 ALL_CXXFLAGS += $(COMMON_CFLAGS) $(CXXFLAGS)
 
 ALL_LDFLAGS += -Wl,--build-id
+ALL_LDFLAGS += -Wl,--as-needed
 ALL_LDFLAGS += $(LDFLAGS)
+
+ALL_ASFLAGS += $(ASFLAGS)
 
 ifndef V
 	QUIET_CC    = @ echo '  CC   ' $@;
@@ -106,6 +142,7 @@ ifndef V
 	QUIET_SYM   = @ echo '  SYM  ' $@;
 	QUIET_FLEX  = @ echo '  FLEX ' $@;
 	QUIET_BISON = @ echo '  BISON' $*.tab.c $*.tab.h;
+	QUIET_AS    = @ echo '  AS   ' $@;
 endif
 
 # Avoid deleting .o files
@@ -131,6 +168,7 @@ $(O)/.TRACK-$(1)FLAGS: FORCE
 TRASH += $(O)/.TRACK-$(1)FLAGS
 endef
 
+$(eval $(call flags-template,AS,AS,assembler build flags))
 $(eval $(call flags-template,C,CC,c build flags))
 $(eval $(call flags-template,CXX,CXX,c++ build flags))
 $(eval $(call flags-template,LD,LD,link flags))
@@ -144,18 +182,21 @@ $(O)/%.tab.h $(O)/%.tab.c : %.y
 $(O)/%.ll.c : %.l
 	$(QUIET_FLEX)$(FLEX) -P '$(parser-prefix)' --bison-locations --bison-bridge -o $@ $<
 
-$(O)/%.o: %.c .TRACK-CFLAGS
+$(O)/%.o: %.c $(O)/.TRACK-CFLAGS
 	$(QUIET_CC)$(CC)   -MMD -MF $(call obj-to-dep,$@) -c -o $@ $< $(ALL_CFLAGS) $(cflags-$*)
 
-$(O)/%.o: %.cc .TRACK-CXXFLAGS
+$(O)/%.o: %.cc $(O)/.TRACK-CXXFLAGS
 	$(QUIET_CXX)$(CXX) -MMD -MF $(call obj-to-dep,$@) -c -o $@ $< $(ALL_CXXFLAGS) $(cxxflags-$*)
 
+$(O)/%.o : %.S $(O)/.TRACK-ASFLAGS
+	$(QUIET_AS)$(AS) -c $(ALL_ASFLAGS) $< -o $@
+
 define BIN-LINK
-$(1)/$(2) : .TRACK-LDFLAGS $(obj-$(2))
-	$$(QUIET_LINK)$(LD) -o $$@ $(call target-obj,$(2)) $(ALL_LDFLAGS) $(ldflags-$(2))
+$(O)/$(1)$(BIN_EXT) : $(O)/.TRACK-LDFLAGS $(call target-obj,$(1))
+	$$(QUIET_LINK)$(LD) -o $$@ $(call target-obj,$(1)) $(ALL_LDFLAGS) $(ldflags-$(1))
 endef
 
-$(foreach target,$(TARGETS),$(eval $(call BIN-LINK,$(O),$(target))))
+$(foreach target,$(TARGETS),$(eval $(call BIN-LINK,$(target))))
 
 ifndef NO_INSTALL
 PREFIX  ?= $(HOME)   # link against things here
@@ -167,16 +208,21 @@ BINDIR  ?= $(DESTDIR)/bin
 install: $(foreach target,$(TARGETS),$(target).install)
 endif
 
+obj-all = $(foreach target,$(TARGETS),$(obj-$(target)))
+obj-trash = $(foreach obj,$(obj-all),$(call OBJ_TRASH,$(obj)))
+
 .PHONY: clean %.clean
 %.clean :
-	$(RM) $(call target-obj,$*) $(O)/$* $(TRASH) $(call target-dep,$*)
+	$(RM) $(call target-obj,$*) $(O)/$* $(TARGET_TRASH) $(call target-dep,$*)
 
 clean:	$(addsuffix .clean,$(TARGETS))
+	$(RM) $(TRASH) $(obj-trash)
 
 .PHONY: watch
 watch:
 	@while true; do \
-		make -rR --no-print-directory; \
+		echo $(MAKEFLAGS); \
+		$(MAKE) $(MAKEFLAGS) -rR --no-print-directory; \
 		inotifywait -q \
 		  \
 		 -- $$(find . \
@@ -184,7 +230,7 @@ watch:
 			-or -name '*.h' \
 			-or -name 'Makefile' \
 			-or -name '*.mk' ); \
-		echo "Rebuilding..."
+		echo "Rebuilding...";	\
 	done
 
 .PHONY: show-targets
