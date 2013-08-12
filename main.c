@@ -85,7 +85,6 @@ int main(int argc, char **argv)
 	};
 	irc_connect(&c);
 
-
 	ev_run(EV_DEFAULT_ 0);
 	return 0;
 }
