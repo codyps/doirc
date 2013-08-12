@@ -1,4 +1,4 @@
-## base.mk: 31d5ac0+, see https://github.com/jmesmon/trifles.git
+## base.mk: 1e1e11d, see https://github.com/jmesmon/trifles.git
 # Usage:
 #
 # == Targets ==
@@ -128,11 +128,28 @@ ALL_CFLAGS += -Wstrict-prototypes -Wmissing-prototypes
 ALL_CFLAGS   += $(COMMON_CFLAGS) $(CFLAGS)
 ALL_CXXFLAGS += $(COMMON_CFLAGS) $(CXXFLAGS)
 
-ALL_LDFLAGS += -Wl,--build-id
-ALL_LDFLAGS += -Wl,--as-needed
-ALL_LDFLAGS += $(LDFLAGS)
+ifndef NO_BUILD_ID
+LDFLAGS += -Wl,--build-id
+else
+LDFLAGS += -Wl,--build-id=none
+endif
 
+ifndef NO_AS_NEEDED
+LDFLAGS += -Wl,--as-needed
+else
+LDFLAGS += -Wl,--no-as-needed
+endif
+
+ALL_LDFLAGS += $(LDFLAGS)
 ALL_ASFLAGS += $(ASFLAGS)
+
+# FIXME: need to exclude '-I', '-l', '-L' options
+# - potentially seperate those flags from ALL_*?
+MAKE_ENV = CC="$(CC)" LD="$(LD)" AS="$(AS)" CXX="$(CXX)"
+# CFLAGS="$(ALL_CFLAGS)" \
+	   LDFLAGS="$(ALL_LDFLAGS)" \
+	   CXXFLAGS="$(ALL_CXXFLAGS)" \
+	   ASFLAGS="$(ALL_ASFLAGS)"
 
 ifndef V
 	QUIET_CC    = @ echo '  CC   ' $@;

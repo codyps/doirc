@@ -15,7 +15,7 @@ static int on_privmsg(struct irc_connection *c,
 	const char *name_end = memchr(src, '!', src_len);
 	if (memeqstr(msg, msg_len, ",hi")) {
 		irc_cmd_privmsg_fmt(c, dests[0].data, dests[0].len,
-				"HI, %.*s", name_end - src, src);
+				"HI, %.*s", (int)(name_end - src), src);
 	}
 	return 0;
 }
@@ -40,7 +40,7 @@ static int on_kick(struct irc_connection *c,
 {
 	if (irc_user_is_me(c, nick, nick_len)) {
 		printf("I was kicked from %.*s because \"%.*s\" rejoin\n",
-				chan_len, chan, reason_len, reason);
+				(int)chan_len, chan, (int)reason_len, reason);
 		irc_cmd_join(c, chan, chan_len);
 	}
 	return 0;

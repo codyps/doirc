@@ -1,9 +1,9 @@
 all::
 
 ccan: FORCE
-	@$(MAKE) $(MAKEFLAGS) --no-print-directory -C ccan
+	@$(MAKE) $(MAKEFLAGS) $(MAKE_ENV) LD="ld" --no-print-directory -C ccan
 dirclean: clean
-	@$(MAKE) $(MAKEFLAGS) --no-print-directory -C ccan clean
+	@$(MAKE) $(MAKEFLAGS) $(MAKE_ENV) --no-print-directory -C ccan clean
 
 test : ccan
 obj-test = main.o irc.o penny/debug.o rbtree/rbtree.o

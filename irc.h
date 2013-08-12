@@ -15,7 +15,7 @@ enum irc_num_cmds {
 #undef RPL
 };
 
-static const char *irc_num_cmds[] = {
+static const char * const irc_num_cmds[] = {
 #define RPL(name, value) [value] = #name,
 #include "irc_spec.h"
 #undef RPL
@@ -128,6 +128,12 @@ int irc_set_channel_user_mode(struct irc_connection *c,
 		const char *channel, size_t channel_len,
 		const char *name, size_t name_len,
 		enum irc_channel_user_mode mode);
+
+/* split a 'name' into it's components */
+void irc_address_parts(const char *addr, size_t addr_len,
+		const char **nick, size_t *nick_len,
+		const char **user, size_t *user_len,
+		const char **host, size_t *host_len);
 
 /* manage a connection */
 int irc_connect(struct irc_connection *c);
