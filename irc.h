@@ -65,11 +65,11 @@ struct irc_conn_cb {
 			char const *nick, size_t nick_len,
 			char const *reason, size_t reason_len);
 
-	int (*ping)(struct irc_connection *c);
-
 	/* connection lifecycle */
 	int (*connect)(struct irc_connection *c);
 	int (*disconnect)(struct irc_connection *c);
+
+	int (*ping)(struct irc_connection *c);
 };
 
 struct irc_connection {
