@@ -67,19 +67,16 @@ int irc_cmd_fmt(struct irc_connection *c, char const *str, ...)
 	return irc_cmd(c, buf, sz);
 }
 
-int irc_cmd_privmsg_fmt(struct irc_connection *c,
+int irc_cmd_privmsg_va(struct irc_connection *c,
 		char const *dest, size_t dest_len,
-		char const *msg_fmt, ...)
+		char const *msg_fmt, va_list va)
 {
 	char buf[1024];
-	va_list va;
-	va_start(va, msg_fmt);
-
 	size_t sz = snprintf(buf, sizeof(buf), "PRIVMSG %.*s :", (int)dest_len, dest);
 	if (sz >= sizeof(buf) - 2)
 		goto overflow;
+
 	sz += vsnprintf(buf + sz, sizeof(buf) - sz, msg_fmt, va);
-	va_end(va);
 	if (sz >= sizeof(buf) - 2)
 		goto overflow;
 
@@ -90,6 +87,17 @@ int irc_cmd_privmsg_fmt(struct irc_connection *c,
 overflow:
 	pr_debug(1, "oversized irc_cmd_privmsg_fmt, dropping.");
 	return -1;
+}
+
+int irc_cmd_privmsg_fmt(struct irc_connection *c,
+		char const *dest, size_t dest_len,
+		char const *msg_fmt, ...)
+{
+	va_list va;
+	va_start(va, msg_fmt);
+	int r = irc_cmd_privmsg_va(c, dest, dest_len, msg_fmt, va);
+	va_end(va);
+	return r;
 }
 
 static int irc_parse_args(char const *start, size_t len, struct arg *args,
@@ -369,7 +377,7 @@ static int process_pkt(struct irc_connection *c, char *start, size_t len)
 		else if (memeqstr(command, command_len, "KICK"))
 			return handle_kick(c, prefix, prefix_len, remain, remain_len);
 		else {
-			printf("unhandled command %.*s\n",
+			printf("unhandled command text %.*s\n",
 					(int)command_len, command);
 			return 1;
 		}

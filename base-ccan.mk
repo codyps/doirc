@@ -1,27 +1,24 @@
-## base-ccan.mk: dfdb8a2, see https://github.com/jmesmon/trifles.git
+## base-ccan.mk: bd8e4d7, see https://github.com/jmesmon/trifles.git
 CCAN_CFLAGS ?= $(ALL_CFLAGS)
 # Blah, fix LDFLAGS
+# TODO: rebuild should occur when CFLAGS, CC, LD, or LDFLAGS change.
+# TODO: don't call submake, figure out the objects ourselves.
 
 ifndef BASE_MK_MANUAL_CCAN
-$(obj-all) : ccan
+$(obj-all) : ccan/config.h
+$(TARGETS) : ccan/libccan.a
 ALL_CPPFLAGS += -Iccan
 ALL_LDFLAGS  += -Lccan -lccan
 endif
 
-ifndef V
-	QUIET_SUBMAKE  = @ echo '  MAKE ' $@;
-endif
 
 export CCAN_CFLAGS
 export CCAN_LDFLAGS
 
-.PHONY: ccan
-ccan: FORCE
-	$(QUIET_SUBMAKE)$(MAKE) $(MAKE_ENV) --no-print-directory -C $@ $(MAKEFLAGS)
-
-.PHONY: ccan.clean
-ccan.clean :
-	$(QUIET_SUBMAKE)$(MAKE) --no-print-directory -C $(@:.clean=) $(MAKEFLAGS) clean
+$(eval $(call sub-make-no-clean,ccan/config.h))
+$(eval $(call sub-make-no-clean,ccan/libccan.a))
+.PHONY: ccan/clean
+$(eval $(call sub-make-no-clean,ccan/clean))
 
 .PHONY: dirclean
-dirclean : clean ccan.clean
+dirclean : clean ccan/clean

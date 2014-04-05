@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stdarg.h>
 
 #include <ccan/compiler/compiler.h>
 
@@ -110,6 +111,9 @@ int PRINTF_FMT(2,3) irc_cmd_fmt(struct irc_connection *c,
 int PRINTF_FMT(4,5) irc_cmd_privmsg_fmt(struct irc_connection *c,
 		char const *dest, size_t dest_len,
 		char const *msg_fmt, ...);
+int irc_cmd_privmsg_va(struct irc_connection *c,
+		char const *dest, size_t dest_len,
+		char const *msg_fmt, va_list va);
 
 #define irc_cmd_join_(c, n) irc_cmd_join(c, n, strlen(n))
 int irc_cmd_join(struct irc_connection *c,
