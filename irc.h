@@ -79,7 +79,6 @@ struct irc_connection {
 	/* network connection */
 	const char *server;
 	const char *port;
-	struct addrinfo *addr;
 
 	/* irc proto connection */
 	const char *nick;
@@ -141,6 +140,7 @@ void irc_address_parts(const char *addr, size_t addr_len,
 
 /* manage a connection */
 int irc_connect(struct irc_connection *c);
+void irc_connect_fd(struct irc_connection *c, int fd);
 void irc_disconnect(struct irc_connection *c);
 bool irc_is_connected(struct irc_connection *c);
 

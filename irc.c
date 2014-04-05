@@ -530,11 +530,20 @@ static int irc_net_connect(struct irc_connection *c)
 
 	freeaddrinfo(res);
 
+	return fd;
+}
+
+static void irc_ev_init(struct irc_connection *c, int fd)
+{
 	/* FIXME: avoid depending on libev */
 	ev_io_init(&c->w, conn_cb, fd, EV_READ);
 	ev_io_start(EV_DEFAULT_ &c->w);
+}
 
-	return fd;
+void irc_connect_fd(struct irc_connection *c, int fd)
+{
+	irc_ev_init(c, fd);
+	irc_proto_connect(c);
 }
 
 int irc_connect(struct irc_connection *c)
@@ -542,6 +551,6 @@ int irc_connect(struct irc_connection *c)
 	int fd = irc_net_connect(c);
 	if (fd < 0)
 		return fd;
-	irc_proto_connect(c);
+	irc_connect_fd(c, fd);
 	return fd;
 }
