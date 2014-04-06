@@ -11,7 +11,6 @@
 
 #include <penny/print.h>
 #include <penny/penny.h>
-#include <penny/debug.h>
 #include <penny/mem.h>
 
 #include <ccan/container_of/container_of.h>
@@ -21,6 +20,7 @@
 #include <ccan/str/str.h>
 #include <ccan/array_size/array_size.h>
 #include <ccan/list/list.h>
+#include <ccan/pr_debug/pr_debug.h>
 
 #include <ev.h>
 
@@ -100,7 +100,7 @@ int irc_cmd_privmsg_fmt(struct irc_connection *c,
 	return r;
 }
 
-static int irc_parse_args(char const *start, size_t len, struct arg *args,
+int irc_parse_args(char const *start, size_t len, struct arg *args,
 		size_t max_args)
 {
 	size_t arg_pos = 0;
@@ -160,6 +160,7 @@ static char *irc_parse_prefix(char *start, size_t len, char **prefix, size_t *pr
 	return memnchr(next + 1, ' ', len - (next + 1 - start));
 }
 
+#if 0
 void irc_address_parts(const char *addr, size_t addr_len,
 		const char **nick, size_t *nick_len,
 		const char **user, size_t *user_len,
@@ -176,72 +177,8 @@ void irc_address_parts(const char *addr, size_t addr_len,
 
 	/* FIXME: unfinished */
 }
+#endif
 
-static struct arg first_comma_arg(const char *start, const char *end)
-{
-	const char *arg_end = memchr(start, ',', end - start);
-	if (arg_end)
-		return (struct arg){ start, arg_end - start };
-	else
-		return (struct arg){ start, end - start };
-}
-
-static struct arg next_comma_arg(struct arg a, const char *end)
-{
-	if (a.data + a.len >= end)
-		return (struct arg) {0, 0};
-	else
-		return first_comma_arg(a.data + a.len + 1, end);
-}
-
-#define irc_for_each_comma_arg(arg, base_arg)		\
-	for (arg = first_comma_arg(base_arg.data, base_arg.data + base_arg.len);	\
-	     arg.len;	\
-	     arg = next_comma_arg(arg, base_arg.data + base_arg.len))
-
-
-static int handle_privmsg(struct irc_connection *c,
-		char *prefix, size_t prefix_len,
-		char *start, size_t len)
-{
-	struct arg args[2];
-	int r = irc_parse_args(start, len, args, ARRAY_SIZE(args));
-	if (r != ARRAY_SIZE(args)) {
-		pr_debug(0, "PRIVMSG requires exactly %zu arguments, got %d",
-				ARRAY_SIZE(args), r);
-		return -1;
-	}
-
-	pr_debug(2, "privmsg recipients: ");
-	struct arg a;
-	size_t dest_ct = 0;
-	struct arg *dests;
-	irc_for_each_comma_arg(a, args[0]) {
-		pr_debug(2, ":: %.*s ", (int)a.len, a.data);
-		/* HAHAHA */
-		dests = alloca(sizeof(*dests));
-		*dests = a;
-		dest_ct ++;
-	}
-	pr_debug(2, "\n");
-
-	if (!dests) {
-		pr_debug(0, "PRIVMSG: no destinations, ignoring.");
-		return -1;
-	}
-	/* OH GOD MY SIDES */
-	dests -= dest_ct - 1;
-
-	pr_debug(2, "message contents: %.*s\n", (int)args[1].len, args[1].data);
-
-	/* FIXME: we only pass the last recipient */
-	if (c->cb.privmsg)
-		c->cb.privmsg(c, prefix, prefix_len,
-			dests, dest_ct,
-			args[1].data, args[1].len);
-
-	return 0;
-}
 bool irc_user_is_me(struct irc_connection *c, const char *start, size_t len)
 
 {
@@ -272,71 +209,92 @@ int irc_clear_channel_user_mode(struct irc_connection *c,
 	return 0;
 }
 
-static int handle_mode(struct irc_connection *c,
-		const char *prefix, size_t prefix_len,
-		const char *start, size_t len)
-{
-	struct arg args[4];
-	int r = irc_parse_args(start, len, args, ARRAY_SIZE(args));
-	if (r < 1) {
-		pr_debug(-1, "MODE: could not parse args: %d", r);
-		return -1;
-	}
-
-	if (c->cb.mode)
-		c->cb.mode(c, prefix, prefix_len,
-				args, r);
-	return 0;
-}
-
-static int handle_kick(struct irc_connection *c,
-		const char *prefix, size_t prefix_len,
-		const char *start, size_t len)
-{
-	struct arg args[3];
-	int r = irc_parse_args(start, len, args, ARRAY_SIZE(args));
-	if (r != ARRAY_SIZE(args)) {
-		pr_debug(-1, "KICK: could not parse args: %d", r);
-		return -1;
-	}
-
-	if (c->cb.kick)
-		c->cb.kick(c,	prefix, prefix_len,
-				args[0].data, args[0].len,
-				args[1].data, args[1].len,
-				args[2].data, args[2].len);
-
-	return 0;
-}
-
-static int handle_rpl_namreply(struct irc_connection *c, char *start, size_t len)
-{
-	return 0;
-}
-
-static int handle_rpl_topic(struct irc_connection *c, char *start, size_t len)
-{
-	struct arg args[3];
-	int r = irc_parse_args(start, len, args, ARRAY_SIZE(args));
-	if (r != ARRAY_SIZE(args)) {
-		warnx("RPL_TOPIC requires exactly %zu arguments, got %d",
-				ARRAY_SIZE(args), r);
-		return -1;
-	}
-
-	printf("topic set for \"%.*s\" in \"%.*s\" to \"%.*s\"\n",
-			(int)args[0].len, args[0].data,
-			(int)args[1].len, args[1].data,
-			(int)args[2].len, args[2].data);
-	return 0;
-}
-
 int irc_cmd_invite(struct irc_connection *c,
 		char const *nick, size_t nick_len,
 		char const *chan, size_t chan_len)
 {
 	irc_cmd_fmt(c, "INVITE %.*s %.*s", (int)nick_len, nick, (int)chan_len, chan);
 	return 0;
+}
+
+static uint32_t op_hash_num(unsigned num)
+{
+	return tommy_hash_u32(IRC_OP_NUM, &num, sizeof(num));
+}
+
+static uint32_t op_hash_str(const char *str, size_t str_len)
+{
+	printf("HASH STR: %.*s (%zu)\n", (int)str_len, str, str_len);
+	return tommy_hash_u32(IRC_OP_STR, str, str_len);
+}
+
+static uint32_t op_hash(struct irc_operation *op)
+{
+	if (op->type == IRC_OP_NUM)
+		return op_hash_num(op->num);
+	else
+		return op_hash_str(op->str, op->str_len);
+}
+
+void irc_add_operation(struct irc_connection *c, struct irc_operation *op)
+{
+	tommy_hashlin_insert(&c->operations, &op->node, op, op_hash(op));
+}
+
+int irc_create_operation_num(struct irc_connection *c,
+		unsigned num, irc_op_cb cb)
+{
+	struct irc_operation *op = malloc(sizeof(*op));
+	if (!op)
+		return -1;
+	*op = (struct irc_operation) {
+		.type = IRC_OP_NUM,
+		.num  = num,
+		.cb = cb,
+	};
+	irc_add_operation(c, op);
+	return 0;
+}
+
+int irc_create_operation_str_(struct irc_connection *c,
+		const char *str, size_t str_len, irc_op_cb cb)
+{
+	struct irc_operation *op = malloc(sizeof(*op));
+	if (!op)
+		return -1;
+	*op = (struct irc_operation) {
+		.type = IRC_OP_STR,
+		.str = str,
+		.str_len = str_len,
+		.cb = cb,
+	};
+	irc_add_operation(c, op);
+	return 0;
+}
+
+static int compare_arg_to_op_str(const void *arg_, const void *op_)
+{
+	const struct arg *arg = arg_;
+	const struct irc_operation *op = op_;
+
+	printf("COMPARE STR?: %d\n", op->type);
+
+	if (op->type != IRC_OP_STR)
+		return 1;
+
+	printf("compare: %.*s %.*s\n", (int)op->str_len, op->str, (int)arg->len, arg->data);
+	return !memeq(op->str, op->str_len, arg->data, arg->len);
+}
+
+static int compare_num_to_op_num(const void *num_, const void *op_)
+{
+	unsigned num = (uintptr_t)num_;
+	const struct irc_operation *op = op_;
+
+	printf("COMPARE NUM?: %d\n", op->type);
+	if (op->type != IRC_OP_NUM)
+		return 1;
+	return op->num != num;
 }
 
 static int process_pkt(struct irc_connection *c, char *start, size_t len)
@@ -361,27 +319,7 @@ static int process_pkt(struct irc_connection *c, char *start, size_t len)
 			(int)prefix_len, prefix,
 			(int)command_len, command,
 			(int)remain_len, remain);
-
-	if (isalpha(*command)) {
-		if (memeqstr(command, command_len, "PING")) {
-			if (c->cb.ping)
-				c->cb.ping(c);
-			char *p = start + 5;
-			/* XXX: ensure @p has a server spec. */
-			irc_cmd_fmt(c, "PONG %.*s", (int)(len - 5), p);
-			return 0;
-		} else if (memeqstr(command, command_len, "PRIVMSG"))
-			return handle_privmsg(c, prefix, prefix_len, remain, remain_len);
-		else if (memeqstr(command, command_len, "MODE"))
-			return handle_mode(c, prefix, prefix_len, remain, remain_len);
-		else if (memeqstr(command, command_len, "KICK"))
-			return handle_kick(c, prefix, prefix_len, remain, remain_len);
-		else {
-			printf("unhandled command text %.*s\n",
-					(int)command_len, command);
-			return 1;
-		}
-	} else if (command_len == 3 && isdigit(*command)
+	if (command_len == 3 && isdigit(*command)
 				&& isdigit(*(command+1))
 				&& isdigit(*(command+2))) {
 		char const *name;
@@ -396,31 +334,27 @@ static int process_pkt(struct irc_connection *c, char *start, size_t len)
 		if (!name)
 			name = "(unknown)";
 
-		switch(cmd_val) {
-			case RPL_WELCOME:
-				if (c->cb.connect)
-					c->cb.connect(c);
-				break;
-			case 353: /* NAMREPLY */
-				return handle_rpl_namreply(c, remain, remain_len);
-			case 332: /* TOPIC */
-				return handle_rpl_topic(c, remain, remain_len);
-			case 372: /* MOTD */
-			case 376: /* ENDOFMOTD */
-			case 375: /* MOTDSTART */
-				return 0;
-			case 474: /* JOIN FAILURE */
-			default:
-				printf("unhandled numeric command: %d %s\n",
-						cmd_val, name);
-				return 1;
-		}
-	} else {
-		warnx("invalid packet: unparsable command.");
-		return -EINVAL;
+		struct irc_operation *op = tommy_hashlin_search(&c->operations,
+				compare_num_to_op_num,
+				(void *)(uintptr_t)cmd_val, op_hash_num(cmd_val));
+		if (op)
+			return op->cb(c, op, prefix, prefix_len, remain, remain_len);
 	}
 
-	return 0;
+	/* otherwise, it must be a string command */
+	struct arg s = {
+		.data = command,
+		.len  = command_len,
+	};
+	struct irc_operation *op = tommy_hashlin_search(&c->operations,
+					compare_arg_to_op_str, &s,
+					op_hash_str(command, command_len));
+	if (op)
+		return op->cb(c, op, prefix, prefix_len, remain, remain_len);
+
+	warnx("unknown command: %.*s", (int)command_len,
+			command);
+	return -EINVAL;
 }
 
 /* general fmt of messages */
@@ -538,6 +472,11 @@ static void irc_ev_init(struct irc_connection *c, int fd)
 	/* FIXME: avoid depending on libev */
 	ev_io_init(&c->w, conn_cb, fd, EV_READ);
 	ev_io_start(EV_DEFAULT_ &c->w);
+}
+
+void irc_init_cb(struct irc_connection *c)
+{
+	tommy_hashlin_init(&c->operations);
 }
 
 void irc_connect_fd(struct irc_connection *c, int fd)

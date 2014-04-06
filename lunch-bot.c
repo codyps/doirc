@@ -1,5 +1,7 @@
 #include "irc.h"
+#include "irc_helpers.h"
 
+#include <ccan/pr_debug/pr_debug.h>
 #include <ccan/compiler/compiler.h>
 #include <ccan/err/err.h>
 #include <ccan/array_size/array_size.h>
@@ -90,6 +92,9 @@ struct command commands [] = {
 	CMD(help),
 };
 
+/* cmd 353 = NAMES */
+/* cmd 366 = ENDOFNAMES */
+
 static void run_command(struct irc_connection *c, struct msg_source *src,
 		char const *msg, size_t msg_len)
 {
@@ -116,7 +121,7 @@ static void run_command(struct irc_connection *c, struct msg_source *src,
 	commands[0].cb(c, src, cmd_start, cmd_len, arg, arg_len);
 }
 
-static int on_privmsg(struct irc_connection *c,
+static int do_privmsg(struct irc_connection *c, struct irc_operation *op,
 		char const *src, size_t src_len,
 		struct arg *dests, size_t dest_ct,
 		char const *msg, size_t msg_len)
@@ -147,31 +152,43 @@ static int on_privmsg(struct irc_connection *c,
 		/* TODO: identify the channel by partially parsing the command. */
 	}
 
+	/* TODO: also check if someone is calling us by name */
+	if (memstarts(msg, msg_len, c->nick, strlen(c->nick))) {
+		/* it starts with our name, try to parse a command */
+	}
+
 	if (msg_len > 0 && *msg == cmd_magic)
 		run_command(c, &msg_src, msg, msg_len);
 
-	/* TODO: also check if someone is calling us by name */
 	return 0;
 }
 
-static int on_join(struct irc_connection *c,
-		char const *ch, size_t ch_len)
+static int on_privmsg(struct irc_connection *c, struct irc_operation *op,
+		char const *prefix, size_t prefix_len,
+		char const *remain, size_t remain_len)
 {
-	return 0;
+	return privmsg_helper(c, op, prefix, prefix_len, remain,
+			remain_len, do_privmsg);
 }
 
-static int on_part(struct irc_connection *c,
-		char const *ch, size_t ch_len)
+static int on_kick(struct irc_connection *c, struct irc_operation *op,
+		char const *prefix, size_t prefix_len,
+		char const *remain, size_t remain_len)
 {
-	return 0;
-}
+	struct arg args[3];
+	int r = irc_parse_args(remain, remain_len, args, ARRAY_SIZE(args));
+	if (r != ARRAY_SIZE(args)) {
+		pr_debug(-1, "KICK: could not parse args: %d", r);
+		return -1;
+	}
 
-static int on_kick(struct irc_connection *c,
-		char const *kicker, size_t kicker_len,
-		char const *chan, size_t chan_len,
-		char const *nick, size_t nick_len,
-		char const *reason, size_t reason_len)
-{
+	char const *chan = args[0].data;
+	size_t chan_len = args[0].len;
+	char const *nick = args[1].data;
+	size_t nick_len = args[1].len;
+	char const *reason = args[2].data;
+	size_t reason_len = args[2].len;
+
 	if (irc_user_is_me(c, nick, nick_len)) {
 		printf("I was kicked from %.*s because \"%.*s\" rejoin\n",
 				(int)chan_len, chan, (int)reason_len, reason);
@@ -180,13 +197,9 @@ static int on_kick(struct irc_connection *c,
 	return 0;
 }
 
-static int on_disconnect(UNUSED struct irc_connection *c)
-{
-	printf("server booted us.\n");
-	return 0;
-}
-
-static int on_connect(struct irc_connection *c)
+static int on_connect(struct irc_connection *c, struct irc_operation *op,
+		char const *prefix, size_t prefix_len,
+		char const *remain, size_t remain_len)
 {
 	irc_cmd_join_(c, "#test-lunch-bot");
 	return 0;
@@ -207,16 +220,21 @@ int main(int argc, char **argv)
 		.nick = "lunch-bot",
 		.user = "lunch-bot",
 		.realname = "lunch-bot",
-
-		.cb = {
-			.connect = on_connect,
-			.disconnect = on_disconnect,
-			.privmsg = on_privmsg,
-			.join = on_join,
-			.part = on_part,
-			.kick = on_kick,
-		},
 	};
+
+	irc_init_cb(&c);
+
+	DEFINE_IRC_OP_NUM(connect, RPL_WELCOME);
+	irc_add_operation(&c, &op_connect);
+
+	DEFINE_IRC_OP_STR(privmsg, "PRIVMSG");
+	irc_add_operation(&c, &op_privmsg);
+
+	DEFINE_IRC_OP_STR(kick, "KICK");
+	irc_add_operation(&c, &op_kick);
+
+	irc_add_ping_handler(&c);
+
 	irc_connect(&c);
 
 	ev_run(EV_DEFAULT_ 0);

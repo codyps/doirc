@@ -7,3 +7,6 @@
 [submodule "rbtree"]
 	path = rbtree
 	url = https://github.com/jmesmon/rbtree.git
+[submodule "tommyds"]
+	path = tommyds
+	url = https://github.com/jmesmon/tommyds

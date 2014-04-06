@@ -7,6 +7,7 @@
 #include <stdarg.h>
 
 #include <ccan/compiler/compiler.h>
+#include <tommyds/tommyhashlin.h>
 
 #include <ev.h>
 
@@ -44,33 +45,27 @@ struct arg {
 };
 
 struct irc_connection;
-struct irc_conn_cb {
-	int (*privmsg)(struct irc_connection *c,
-			char const *source, size_t source_len,
-			struct arg *dests, size_t dest_ct,
-			char const *msg, size_t msg_len);
+struct irc_operation;
 
-	/* FIXME: divide types of modes */
-	int (*mode)(struct irc_connection *c,
-			char const *source, size_t source_len,
-			struct arg *args, int arg_ct);
+typedef int (*irc_op_cb)(struct irc_connection *c, struct irc_operation *op,
+		const char *prefix, size_t prefix_len,
+		const char *start, size_t len);
 
-	/* channel lifecycle */
-	int (*join)(struct irc_connection *c,
-			char const *ch, size_t ch_len);
-	int (*part)(struct irc_connection *c,
-			char const *ch, size_t ch_len);
-	int (*kick)(struct irc_connection *c,
-			char const *kicker, size_t kicker_len,
-			char const *ch, size_t ch_len,
-			char const *nick, size_t nick_len,
-			char const *reason, size_t reason_len);
-
-	/* connection lifecycle */
-	int (*connect)(struct irc_connection *c);
-	int (*disconnect)(struct irc_connection *c);
-
-	int (*ping)(struct irc_connection *c);
+struct irc_operation {
+	tommy_node node;
+	enum {
+		IRC_OP_STR,
+		IRC_OP_NUM,
+	} type;
+	union {
+		struct {
+			const char *str;
+			size_t str_len;
+		};
+		unsigned num;
+	};
+	irc_op_cb cb;
+	/* XXX: we probably need a destructor */
 };
 
 struct irc_connection {
@@ -86,7 +81,9 @@ struct irc_connection {
 	const char *user;
 	const char *pass;
 
-	struct irc_conn_cb cb;
+	/* (struct irc_operation *) */
+	tommy_hashlin operations;
+
 #if 0
 	/* state while connected */
 	enum irc_user_mode user_mode;
@@ -132,16 +129,56 @@ int irc_set_channel_user_mode(struct irc_connection *c,
 		const char *name, size_t name_len,
 		enum irc_channel_user_mode mode);
 
-/* split a 'name' into it's components */
-void irc_address_parts(const char *addr, size_t addr_len,
-		const char **nick, size_t *nick_len,
-		const char **user, size_t *user_len,
-		const char **host, size_t *host_len);
 
-/* manage a connection */
+/*
+ * callback managment
+ */
+int irc_create_operation_num(struct irc_connection *c,
+		unsigned num, irc_op_cb cb);
+
+/* str is assumed to continue to exist until the op is removed */
+int irc_create_operation_str_(struct irc_connection *c,
+		const char *str, size_t str_len, irc_op_cb cb);
+static inline int irc_create_operation_str(struct irc_connection *c,
+		const char *str, irc_op_cb cb)
+{
+	return irc_create_operation_str_(c, str, strlen(str), cb);
+}
+
+/* op is assumed to continue to exist until the op is removed */
+void irc_add_operation(struct irc_connection *c, struct irc_operation *op);
+
+#define DEFINE_IRC_OP_STR(name_, str_)		\
+	struct irc_operation op_##name_ = {		\
+		.type = IRC_OP_STR,		\
+		.str = str_,			\
+		.str_len = sizeof(str_) - 1,	\
+		.cb = on_##name_,		\
+	}
+
+#define DEFINE_IRC_OP_NUM(name_, num_)		\
+	struct irc_operation op_##name_ = {		\
+		.type = IRC_OP_NUM,		\
+		.num = num_,			\
+		.cb = on_##name_,		\
+	}
+
+/* must be called before callbacks are added */
+void irc_init_cb(struct irc_connection *c);
+
+/*
+ * utility
+ */
+int irc_parse_args(char const *start, size_t len, struct arg *args,
+		size_t max_args);
+
+/*
+ * connection managment
+ */
 int irc_connect(struct irc_connection *c);
 void irc_connect_fd(struct irc_connection *c, int fd);
 void irc_disconnect(struct irc_connection *c);
 bool irc_is_connected(struct irc_connection *c);
+
 
 #endif

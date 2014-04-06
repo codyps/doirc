@@ -18,15 +18,12 @@ flags = [
 # language that the files to be compiled are written in. This is mostly
 # relevant for c++ headers.
 # For a C project, you would set this to 'c' instead of 'c++'.
-'-x',
-'c',
+'-x', 'c',
 # includes
-'-I',
-'.',
-'-I',
-'ccan',
-'-I',
-'penny'
+'-I', '.',
+'-I', 'ccan',
+'-I', 'penny',
+'-I', 'tommyds'
 ]
 
 # Set this to the absolute path to the folder (NOT the file!) containing the
