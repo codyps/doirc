@@ -1,0 +1,8 @@
+language: c
+compiler:
+        - clang
+        - gcc
+env:
+        - CFLAGS=-O3
+script: "make"
+
