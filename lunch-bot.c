@@ -1,10 +1,12 @@
 #include "irc.h"
 #include "irc_helpers.h"
+#include "user-track.h"
 
 #include <ccan/pr_debug/pr_debug.h>
 #include <ccan/compiler/compiler.h>
 #include <ccan/err/err.h>
 #include <ccan/array_size/array_size.h>
+#include <ccan/container_of/container_of.h>
 
 #include <penny/mem.h>
 
@@ -25,6 +27,16 @@ struct msg_source {
 	const char *user;
 	size_t user_len;
 };
+
+struct irc_ctx {
+	struct irc_connection c;
+	struct irc_usertrack_channel ut;
+};
+
+static struct irc_ctx *con_to_ctx(struct irc_connection *c)
+{
+	return container_of(c, struct irc_ctx, c);
+}
 
 static int PRINTF_FMT(3,4) msg_reply_fmt(struct irc_connection *c, const struct msg_source *src, const char *fmt, ...)
 {
@@ -87,13 +99,23 @@ static int cmd_help(struct irc_connection *c, const struct msg_source *src, cons
 	return 0;
 }
 
+static int cmd_ping(struct irc_connection *c, const struct msg_source *src, const char *cmd, size_t cmd_len, const char *msg, size_t msg_len)
+{
+	struct irc_usertrack_channel *ut = &con_to_ctx(c)->ut;
+	struct irc_user *u;
+	struct hashlin_for_each_temp tmp;
+	irc_usertrack_channel_for_each_user(ut, u, tmp) {
+		printf("|| %.*s\n", (int)u->nick_len, u->nick);
+	}
+
+	return 0;
+}
+
 struct command commands [] = {
 	CMD(unknown), /* this is triggered when the command isn't recognized */
 	CMD(help),
+	CMD(ping),
 };
-
-/* cmd 353 = NAMES */
-/* cmd 366 = ENDOFNAMES */
 
 static void run_command(struct irc_connection *c, struct msg_source *src,
 		char const *msg, size_t msg_len)
@@ -197,11 +219,13 @@ static int on_kick(struct irc_connection *c, struct irc_operation *op,
 	return 0;
 }
 
+static const char *channel = "#test-lunch-bot";
+
 static int on_connect(struct irc_connection *c, struct irc_operation *op,
 		char const *prefix, size_t prefix_len,
 		char const *remain, size_t remain_len)
 {
-	irc_cmd_join_(c, "#test-lunch-bot");
+	irc_cmd_join_(c, channel);
 	return 0;
 }
 
@@ -213,29 +237,34 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-	struct irc_connection c = {
-		.server = argv[1],
-		.port   = argv[2],
+	struct irc_ctx c = {
+		.c = {
+			.server = argv[1],
+			.port   = argv[2],
 
-		.nick = "lunch-bot",
-		.user = "lunch-bot",
-		.realname = "lunch-bot",
+			.nick = "lunch-bot",
+			.user = "lunch-bot",
+			.realname = "lunch-bot",
+		},
 	};
 
-	irc_init_cb(&c);
+	irc_init_cb(&c.c);
 
 	DEFINE_IRC_OP_NUM(connect, RPL_WELCOME);
-	irc_add_operation(&c, &op_connect);
+	irc_add_operation(&c.c, &op_connect);
 
 	DEFINE_IRC_OP_STR(privmsg, "PRIVMSG");
-	irc_add_operation(&c, &op_privmsg);
+	irc_add_operation(&c.c, &op_privmsg);
 
 	DEFINE_IRC_OP_STR(kick, "KICK");
-	irc_add_operation(&c, &op_kick);
+	irc_add_operation(&c.c, &op_kick);
 
-	irc_add_ping_handler(&c);
+	irc_ut_channel_init(&c.ut, channel);
+	irc_add_usertrack_channel(&c.c, &c.ut);
 
-	irc_connect(&c);
+	irc_add_ping_handler(&c.c);
+
+	irc_connect(&c.c);
 
 	ev_run(EV_DEFAULT_ 0);
 	return 0;

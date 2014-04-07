@@ -100,34 +100,59 @@ int irc_cmd_privmsg_fmt(struct irc_connection *c,
 	return r;
 }
 
+#define PARSE_ARG_BODY do {						\
+	if (*start == ':') {						\
+		args[arg_pos].data = start + 1;				\
+		args[arg_pos].len  = len - 1;				\
+		return arg_pos + 1;					\
+	}								\
+									\
+	char *end_of_curr = memchr(start + 1, ' ', len - 1);		\
+	if (!end_of_curr) {						\
+		args[arg_pos].data = start;				\
+		args[arg_pos].len  = len;				\
+		return arg_pos + 1;					\
+	}								\
+									\
+	size_t len_of_curr = end_of_curr - start;			\
+									\
+	args[arg_pos].data = start;					\
+	args[arg_pos].len  = len_of_curr;				\
+									\
+	char *start_of_next =						\
+		memnchr(end_of_curr + 1, ' ', len - len_of_curr - 1);	\
+	len -= start_of_next - start;					\
+	start = start_of_next;						\
+	arg_pos++;							\
+} while(0)
+
+int irc_parse_last_args(char const *start, size_t len, struct arg *args,
+		size_t max_args)
+{
+	size_t arg_pos = 0;
+	while (start && len) {
+		if (arg_pos >= max_args) {
+			/* discard the first argument and keep going */
+			size_t cpy_size = sizeof(*args) * (max_args - 1);
+			memmove(args, args + 1, cpy_size);
+			arg_pos--;
+		}
+
+		PARSE_ARG_BODY;
+	}
+
+	if (len == 0)
+		return arg_pos;
+
+	return -1;
+}
+
 int irc_parse_args(char const *start, size_t len, struct arg *args,
 		size_t max_args)
 {
 	size_t arg_pos = 0;
 	while (start && len && arg_pos < max_args) {
-		if (*start == ':') {
-			args[arg_pos].data = start + 1;
-			args[arg_pos].len  = len - 1;
-			return arg_pos + 1;
-		}
-
-		char *end_of_curr = memchr(start + 1, ' ', len - 1);
-		if (!end_of_curr) {
-			args[arg_pos].data = start;
-			args[arg_pos].len  = len;
-			return arg_pos + 1;
-		}
-
-		size_t len_of_curr = end_of_curr - start;
-
-		args[arg_pos].data = start;
-		args[arg_pos].len  = len_of_curr;
-
-		char *start_of_next =
-			memnchr(end_of_curr + 1, ' ', len - len_of_curr - 1);
-		len -= start_of_next - start;
-		start = start_of_next;
-		arg_pos++;
+		PARSE_ARG_BODY;
 	}
 
 	if (len == 0)
@@ -224,7 +249,6 @@ static uint32_t op_hash_num(unsigned num)
 
 static uint32_t op_hash_str(const char *str, size_t str_len)
 {
-	printf("HASH STR: %.*s (%zu)\n", (int)str_len, str, str_len);
 	return tommy_hash_u32(IRC_OP_STR, str, str_len);
 }
 
@@ -277,12 +301,8 @@ static int compare_arg_to_op_str(const void *arg_, const void *op_)
 	const struct arg *arg = arg_;
 	const struct irc_operation *op = op_;
 
-	printf("COMPARE STR?: %d\n", op->type);
-
 	if (op->type != IRC_OP_STR)
 		return 1;
-
-	printf("compare: %.*s %.*s\n", (int)op->str_len, op->str, (int)arg->len, arg->data);
 	return !memeq(op->str, op->str_len, arg->data, arg->len);
 }
 
@@ -291,7 +311,6 @@ static int compare_num_to_op_num(const void *num_, const void *op_)
 	unsigned num = (uintptr_t)num_;
 	const struct irc_operation *op = op_;
 
-	printf("COMPARE NUM?: %d\n", op->type);
 	if (op->type != IRC_OP_NUM)
 		return 1;
 	return op->num != num;

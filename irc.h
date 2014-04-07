@@ -148,13 +148,15 @@ static inline int irc_create_operation_str(struct irc_connection *c,
 /* op is assumed to continue to exist until the op is removed */
 void irc_add_operation(struct irc_connection *c, struct irc_operation *op);
 
+#define IRC_OP_STR_INIT(cb_, str_) {	\
+	.type = IRC_OP_STR,		\
+	.str = str_,			\
+	.str_len = sizeof(str_) - 1,	\
+	.cb = cb_,			\
+}
+
 #define DEFINE_IRC_OP_STR(name_, str_)		\
-	struct irc_operation op_##name_ = {		\
-		.type = IRC_OP_STR,		\
-		.str = str_,			\
-		.str_len = sizeof(str_) - 1,	\
-		.cb = on_##name_,		\
-	}
+	struct irc_operation op_##name_ = IRC_OP_STR_INIT(on_##name_, str_)
 
 #define DEFINE_IRC_OP_NUM(name_, num_)		\
 	struct irc_operation op_##name_ = {		\
@@ -172,6 +174,9 @@ void irc_init_cb(struct irc_connection *c);
 int irc_parse_args(char const *start, size_t len, struct arg *args,
 		size_t max_args);
 
+/* instead of getting the first <n> arguments, get the last <n> */
+int irc_parse_last_args(char const *start, size_t len, struct arg *args,
+		size_t max_args);
 /*
  * connection managment
  */
