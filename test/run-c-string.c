@@ -41,19 +41,18 @@ int main(void)
 	print_bytes_as_cstring(ss, sizeof(ss) - 1, stdout);		\
 	printf(") %zd\n", __C_p);					\
 	if (__C_p > 0)							\
-		ARRAY_EQ_MEM(ss, out, out_len);				\
+		ARRAY_EQ_MEM(s, out, out_len);				\
 } while (0)
 
 #define C(s) C_(s, __stringify(s))
 
 	C("hello");
-#if 0
 	C("as\0as");
 	C("buz\nbaz");
 	C("");
 	C("\r");
 	C("foo\rbar");
-#endif
+	C_("foo\n", "\"foo\\n\"");
 
 	return err_ct;
 }

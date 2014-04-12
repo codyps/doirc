@@ -12,6 +12,7 @@
 #include <penny/print.h>
 #include <penny/penny.h>
 #include <penny/mem.h>
+#include <penny/sprint.h>
 
 #include <ccan/container_of/container_of.h>
 #include <ccan/net/net.h>
@@ -297,7 +298,7 @@ int irc_create_operation_str_(struct irc_connection *c,
 }
 
 /* encode state suitable for passing via an argument to a program */
-static size_t irc_dump_state(struct irc_connection *c, char *buf, size_t len)
+size_t irc_dump_state(struct irc_connection *c, char *buf, size_t len)
 {
 #define R (used > len ? used - len : 0)
 	size_t used = 0;
@@ -314,6 +315,7 @@ static size_t irc_dump_state(struct irc_connection *c, char *buf, size_t len)
 
 static int irc_load_state(struct irc_connection *c, const char *buf, size_t len)
 {
+	return -1;
 }
 
 static int compare_arg_to_op_str(const void *arg_, const void *op_)

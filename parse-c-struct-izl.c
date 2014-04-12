@@ -3,6 +3,10 @@
 #include <string.h>
 #include <stdbool.h>
 
+#if DEBUG
+#include <stdio.h>
+#endif
+
 #define EXPECT(c) do {					\
 	if (consumed >= len || buf[consumed] != c)	\
 		return -1;				\
@@ -90,7 +94,6 @@ static ssize_t parse_str(const char *buf, size_t len, char *out, size_t *out_len
 			return -4;
 
 		int c = buf[i];
-		printf(">>> got %c\n", c);
 		switch (c) {
 		case '"':
 			if (esc) {
@@ -140,6 +143,9 @@ static ssize_t parse_str(const char *buf, size_t len, char *out, size_t *out_len
 					/* don't know how to handle this escape, fail */
 					return -1;
 				}
+			} else {
+				out[o] = c;
+				o++;
 			}
 		}
 	}
