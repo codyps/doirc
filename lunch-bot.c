@@ -11,6 +11,7 @@
 #include <penny/mem.h>
 
 #include <stdio.h>
+#include <ctype.h>
 
 struct msg_source {
 	enum {
@@ -118,12 +119,12 @@ struct command commands [] = {
 };
 
 static void run_command(struct irc_connection *c, struct msg_source *src,
-		char const *msg, size_t msg_len)
+		char const *cmdmsg, size_t cmdmsg_len)
 {
 	size_t i;
-	const char *cmd_start = msg + 1;
-	const char *cmd_end = memchr(cmd_start, ' ', msg_len - 1);
-	size_t cmd_len = cmd_end ? cmd_end - cmd_start : msg_len - 1;
+	const char *cmd_start = cmdmsg;
+	const char *cmd_end = memchr(cmd_start, ' ', cmdmsg_len - 1);
+	size_t cmd_len = cmd_end ? cmd_end - cmd_start : cmdmsg_len - 1;
 	const char *arg;
 	size_t arg_len;
 	if (!cmd_end) {
@@ -131,7 +132,7 @@ static void run_command(struct irc_connection *c, struct msg_source *src,
 		arg = NULL;
 	} else {
 		arg = cmd_end + 1;
-		arg_len = msg_len - cmd_len - 2;
+		arg_len = cmdmsg_len - cmd_len - 2;
 	}
 	for (i = 0; i < ARRAY_SIZE(commands); i++) {
 		if (memeq(cmd_start, cmd_len, commands[i].cmd, commands[i].cmd_len)) {
@@ -143,6 +144,15 @@ static void run_command(struct irc_connection *c, struct msg_source *src,
 	commands[0].cb(c, src, cmd_start, cmd_len, arg, arg_len);
 }
 
+/*
+ *
+ * <cmd_magic> <command>
+ * <nick> <non-alnum>* <command>
+ *
+ * --
+ * <command> must begin with a non-punct character
+ *
+ */
 static int do_privmsg(struct irc_connection *c, struct irc_operation *op,
 		char const *src, size_t src_len,
 		struct arg *dests, size_t dest_ct,
@@ -174,13 +184,21 @@ static int do_privmsg(struct irc_connection *c, struct irc_operation *op,
 		/* TODO: identify the channel by partially parsing the command. */
 	}
 
-	/* TODO: also check if someone is calling us by name */
-	if (memstarts(msg, msg_len, c->nick, strlen(c->nick))) {
-		/* it starts with our name, try to parse a command */
-	}
+	/* check if someone is calling us by name */
+	if (memstarts(msg, msg_len, c->nick, c->nick_len) &&
+			(msg_len - c->nick_len) > 0 && !isalnum(*(msg + c->nick_len))) {
+		const char *cmd_start = msg + c->nick_len + 1;
+		size_t remain_len = msg_len - c->nick_len - 1;
+		/* scan until we get a non-punc char */
+		while (remain_len && !ispunct(*cmd_start)) {
+			cmd_start ++;
+			remain_len --;
+		}
 
+		run_command(c, &msg_src, cmd_start, remain_len);
+	}
 	if (msg_len > 0 && *msg == cmd_magic)
-		run_command(c, &msg_src, msg, msg_len);
+		run_command(c, &msg_src, msg + 1, msg_len - 1);
 
 	return 0;
 }
@@ -242,13 +260,14 @@ int main(int argc, char **argv)
 			.server = argv[1],
 			.port   = argv[2],
 
-			.nick = "lunch-bot",
+			SLM(nick, "lunch-bot"),
+
 			.user = "lunch-bot",
 			.realname = "lunch-bot",
 		},
 	};
 
-	irc_init_cb(&c.c);
+	irc_init(&c.c);
 
 	DEFINE_IRC_OP_NUM(connect, RPL_WELCOME);
 	irc_add_operation(&c.c, &op_connect);

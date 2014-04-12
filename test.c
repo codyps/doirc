@@ -84,7 +84,7 @@ int main(int argc, char **argv)
 		.realname = "bye555",
 	};
 
-	irc_init_cb(&c);
+	irc_init(&c);
 
 	DEFINE_IRC_OP_NUM(connect, RPL_WELCOME);
 	irc_add_operation(&c, &op_connect);

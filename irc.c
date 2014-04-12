@@ -296,6 +296,26 @@ int irc_create_operation_str_(struct irc_connection *c,
 	return 0;
 }
 
+/* encode state suitable for passing via an argument to a program */
+static size_t irc_dump_state(struct irc_connection *c, char *buf, size_t len)
+{
+#define R (used > len ? used - len : 0)
+	size_t used = 0;
+	used += snprintf(&buf[used], R, "{.fd=%d,.server=", c->w.fd);
+	used += sprint_cstring(&buf[used], R, c->server);
+	used += snprintf(&buf[used], R, ",.port=");
+	used += sprint_cstring(&buf[used], R, c->port);
+	used += snprintf(&buf[used], R, ".buffer=");
+	used += sprint_bytes_as_cstring(&buf[used], R, c->in_buf, c->in_pos);
+	used += snprintf(&buf[used], R, "}");
+	return used;
+#undef R
+}
+
+static int irc_load_state(struct irc_connection *c, const char *buf, size_t len)
+{
+}
+
 static int compare_arg_to_op_str(const void *arg_, const void *op_)
 {
 	const struct arg *arg = arg_;
@@ -493,7 +513,7 @@ static void irc_ev_init(struct irc_connection *c, int fd)
 	ev_io_start(EV_DEFAULT_ &c->w);
 }
 
-void irc_init_cb(struct irc_connection *c)
+void irc_init(struct irc_connection *c)
 {
 	tommy_hashlin_init(&c->operations);
 }
