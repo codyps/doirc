@@ -3,6 +3,7 @@
 
 #include <tommyds/tommyhashlin.h>
 #include <string.h>
+#include <assert.h>
 #include <stdlib.h>
 
 struct irc_user {
@@ -52,44 +53,54 @@ static inline void *find_bucket(tommy_hashlin *hl, size_t *pos)
 	return NULL;
 }
 
+static inline void *tommy_hashlin_pos_safe(tommy_hashlin *hl, size_t pos)
+{
+	if (pos > hl->count)
+		return NULL;
+	tommy_node **node_ = tommy_hashlin_pos(hl, pos);
+	assert(node_);
+	tommy_node *node = *node_;
+	if (!node)
+		return NULL;
+
+	return node;
+}
+
 /*
- * @hl is a (tommy_hashlin *)
- * @bucket is a (tommy_node *), cursor, advanced over loop
- * @pos is a (size_t), temporary to track out position
+ * @hl__     : a (tommy_hashlin *)
+ * @bucket__ : a (tommy_node *)
+ * @pos__    : a (size_t) which is set to the current "position" of the obj__ in
+ *	       the hash table.
  */
 #define tommy_hashlin_for_each_bucket(hl__, bucket__, pos__)			\
-		for ((pos__) = 0, (bucket__) = find_bucket((hl__), &(pos__));	\
-		     (bucket__);						\
-		     (bucket__) = find_bucket((hl__), &(pos__)))
+	for ((pos__) = 0, (bucket__) = tommy_hashlin_pos_safe((hl__), (pos__));	\
+	     (bucket__);								\
+	     (pos__)++,   (bucket__) = tommy_hashlin_pos_safe((hl__), (pos__)))
 
 /*
- * @bucket is a (tommy_node *), must not be NULL.
- * @entry  is the object that was inserted into the table, cursor, advanced
- *         over the loop.
- * @next   is a (tommy_node *), temporary to track out position.
+ * tommy_node *list__;
+ * tommy_node *node__;
  */
-#define tommy_node_for_each(bucket_, entry_, next_)		\
-		for ((entry_) = (bucket_)->data, (next_) = (bucket_)->next;	\
-		     (entry_);							\
-		     (entry_) = (next_)->data, (next_) = (next_)->next)
-
-struct hashlin_for_each_temp {
-	size_t pos;
-	tommy_node *next;
-	tommy_node *bucket;
-};
+#define tommy_list_for_each(list__, node__)	\
+	for ((node__) = (list__);		\
+	     (node__);				\
+	     (node__) = (node__)->next)
 
 /*
- * @hl_ is a (tommy_hashlin *)
- * @obj_ is the object that was inserted into the table, cursor, advanced (void *)
- * @tmp_ is a (struct hashlin_for_each_temp)
+ * XXX: break skips a bucket, it doesn't break out of the entire loop as
+ *      expected. Use 'goto' to escape the loop.
+ *
+ * tommy_hashlin *hl_;
+ * tommy_node *node_;   // cursor
+ * tommy_node *bucket_;
+ * size_t pos_;
  */
-#define tommy_hashlin_for_each(hl_, obj_, tmp_)				\
-	tommy_hashlin_for_each_bucket((hl_), (tmp_).bucket, (tmp_).pos)		\
-	tommy_node_for_each((tmp_).bucket, obj_, (tmp_).next)
+#define tommy_hashlin_for_each(hl_, node_, bucket_, pos_)		\
+	tommy_hashlin_for_each_bucket((hl_), (bucket_), (pos_))		\
+	tommy_list_for_each((bucket_), (node_))
 
-
-#define irc_usertrack_channel_for_each_user(utc_, user_, tmp_)	\
-	tommy_hashlin_for_each(&(utc_)->users, user_, tmp_)
+#define irc_usertrack_channel_for_each_user(utc_, user_, node_, bucket_, pos_)	\
+	tommy_hashlin_for_each(&(utc_)->users, node_, bucket_, pos_)		\
+	for ((user_) = (node_)->data; (user_); (user_) = NULL)
 
 #endif

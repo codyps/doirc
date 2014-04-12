@@ -87,12 +87,18 @@ static uint32_t user_hash(struct irc_user *u)
 	return user_hash_name(u->nick, u->nick_len);
 }
 
+static int compare_arg_to_user(const void *arg_, const void *user_)
+{
+	const struct irc_user *u = user_;
+	const struct arg *a = arg_;
+
+	return !memeq(a->data, a->len, u->nick, u->nick_len);
+}
+
 static void add_nick_to_channel(struct irc_usertrack_channel *ut, struct arg nick)
 {
 	if (!nick.len)
 		return;
-
-	printf("ADD %.*s\n", (int)nick.len, nick.data);
 
 	int op = '\0';
 	if (is_user_op_marker(*nick.data)) {
@@ -101,7 +107,15 @@ static void add_nick_to_channel(struct irc_usertrack_channel *ut, struct arg nic
 		nick.len --;
 	}
 
-	struct irc_user *u = malloc(offsetof(struct irc_user, nick[nick.len]));
+	struct irc_user *u = tommy_hashlin_search(&ut->users, compare_arg_to_user, &nick,
+				user_hash_name(nick.data, nick.len));
+
+	if (u)
+		return;
+
+	printf("ADD %.*s\n", (int)nick.len, nick.data);
+
+	u = malloc(offsetof(struct irc_user, nick[nick.len]));
 	if (!u)
 		return;
 
@@ -110,14 +124,6 @@ static void add_nick_to_channel(struct irc_usertrack_channel *ut, struct arg nic
 	memcpy(u->nick, nick.data, nick.len);
 
 	tommy_hashlin_insert(&ut->users, &u->node, u, user_hash(u));
-}
-
-static int compare_arg_to_user(const void *arg_, const void *user_)
-{
-	const struct irc_user *u = user_;
-	const struct arg *a = arg_;
-
-	return !memeq(a->data, a->len, u->nick, u->nick_len);
 }
 
 static void remove_nick_from_channel(struct irc_usertrack_channel *ut, struct arg nick)

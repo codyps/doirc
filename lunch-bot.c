@@ -11,6 +11,7 @@
 #include <penny/mem.h>
 
 #include <stdio.h>
+#include <unistd.h>
 
 struct msg_source {
 	enum {
@@ -31,6 +32,7 @@ struct msg_source {
 struct irc_ctx {
 	struct irc_connection c;
 	struct irc_usertrack_channel ut;
+	const char *prgm;
 };
 
 static struct irc_ctx *con_to_ctx(struct irc_connection *c)
@@ -99,15 +101,38 @@ static int cmd_help(struct irc_connection *c, const struct msg_source *src, cons
 	return 0;
 }
 
-static int cmd_ping(struct irc_connection *c, const struct msg_source *src, const char *cmd, size_t cmd_len, const char *msg, size_t msg_len)
+#define FMT_TOMMY_NODE "{ .data = %p, .key = %#llx, .next = %p, .prev = %p }"
+#define EXP_TOMMY_NODE(n_) (n_).data, (unsigned long long)(n_).key, (n_).next, (n_).prev
+
+#define EXP_TOMMY_HASHLIN(hl_)	(hl_).bucket_bit, (hl_).bucket_max,	\
+		(hl_).bucket_mask, (hl_).bucket_mac, (hl_).low_max,	\
+		(hl_).low_mask, (hl_).split, (hl_).state, (hl_).count
+#define FMT_TOMMY_HASHLIN "{ .bucket_bit=0x%x, .bucket_max=%u, .bucket_mask=0x%x, .bucket_mac=%u, .low_max=%u, .low_mask=0x%x, .split=%u, .state=%u, .count=%u }"
+
+static int cmd_ping(struct irc_connection *c, const struct msg_source *src,
+		const char *cmd, size_t cmd_len, const char *msg, size_t msg_len)
 {
 	struct irc_usertrack_channel *ut = &con_to_ctx(c)->ut;
 	struct irc_user *u;
-	struct hashlin_for_each_temp tmp;
-	irc_usertrack_channel_for_each_user(ut, u, tmp) {
+	tommy_node *bucket, *node;
+	size_t pos;
+
+	printf("|||| "FMT_TOMMY_HASHLIN"\n", EXP_TOMMY_HASHLIN(ut->users));
+
+	irc_usertrack_channel_for_each_user(ut, u, node, bucket, pos) {
 		printf("|| %.*s\n", (int)u->nick_len, u->nick);
 	}
 
+	return 0;
+}
+
+static int cmd_exec(struct irc_connection *c, const struct msg_source *src,
+		const char *cmd, size_t cmd_len, const char *msg, size_t msg_len)
+{
+	const char *prgm = con_to_ctx(c)->prgm;
+	char buf[16];
+	sprintf(buf, "%u", c->w.fd);
+	execlp(prgm, "-f", c->w.fd, c->server, c->port, NULL);
 	return 0;
 }
 
@@ -115,6 +140,7 @@ struct command commands [] = {
 	CMD(unknown), /* this is triggered when the command isn't recognized */
 	CMD(help),
 	CMD(ping),
+	CMD(exec),
 };
 
 static void run_command(struct irc_connection *c, struct msg_source *src,
@@ -149,7 +175,9 @@ static int do_privmsg(struct irc_connection *c, struct irc_operation *op,
 		char const *msg, size_t msg_len)
 {
 	const char *name_end = memchr(src, '!', src_len);
-	printf("PRIV: %.*s %.*s (ct=%d) %.*s\n", (int)src_len, src, (int) dests[0].len, dests[0].data, (int)dest_ct, (int)msg_len, msg);
+	printf("PRIV: %.*s %.*s (ct=%d) %.*s\n", (int)src_len, src,
+			(int) dests[0].len, dests[0].data,
+			(int)dest_ct, (int)msg_len, msg);
 
 	if (dest_ct < 1) {
 		msg_owner(c, "weird dest_ct=%d\n", dest_ct);
@@ -246,6 +274,7 @@ int main(int argc, char **argv)
 			.user = "lunch-bot",
 			.realname = "lunch-bot",
 		},
+		.prgm = argv[0],
 	};
 
 	irc_init_cb(&c.c);
