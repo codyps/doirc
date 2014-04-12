@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdbool.h>
+#include <ctype.h>
 
 #if DEBUG
 #include <stdio.h>
@@ -50,9 +51,8 @@ static ssize_t parse_id(const char *buf, size_t len, char **elem)
 
 static ssize_t parse_uint(const char *buf, size_t len, uintmax_t *v)
 {
-	uintmax_t u;
+	uintmax_t u = 0;
 	size_t i;
-	size_t consumed = 0;
 	for (i = 0; i < len; i++) {
 		if (isdigit(buf[i])) {
 			u *= 10;
@@ -62,6 +62,9 @@ static ssize_t parse_uint(const char *buf, size_t len, uintmax_t *v)
 			return i;
 		}
 	}
+
+	*v = u;
+	return i;
 }
 
 static int from_hex(int c)
@@ -151,7 +154,7 @@ static ssize_t parse_str(const char *buf, size_t len, char *out, size_t *out_len
 	}
 }
 
-static ssize_t parse_elem(struct c_struct_initializer *i, const char *buf, size_t len)
+static ssize_t parse_elem(struct c_ilz_ctx *i, const char *buf, size_t len)
 {
 	ssize_t p;
 	size_t consumed = 0;
@@ -165,7 +168,7 @@ static ssize_t parse_elem(struct c_struct_initializer *i, const char *buf, size_
 	p = parse_id(buf + consumed, R, &id);
 	if (p < 0)
 		return p;
-	p = id_len;
+	id_len = p;
 	consumed += p;
 	EXPECT('=');
 	HAVE_BYTE();
@@ -175,10 +178,17 @@ static ssize_t parse_elem(struct c_struct_initializer *i, const char *buf, size_
 		p = parse_str(buf + consumed, R, obuf, &o);
 		if (p < 0)
 			return p;
+		p = i->parse_string(i, id, id_len, obuf, o);
+		if (p < 0)
+			return p;
 	} else if (isdigit(buf[consumed])) {
 		/* number */
 		uintmax_t v;
 		p = parse_uint(buf + consumed, R, &v);
+		if (p < 0)
+			return p;
+
+		p = i->parse_uint(i, id, id_len, v);
 		if (p < 0)
 			return p;
 	} else {
@@ -189,7 +199,7 @@ static ssize_t parse_elem(struct c_struct_initializer *i, const char *buf, size_
 	return consumed;
 }
 
-ssize_t parse_c_struct_initializer(struct c_struct_initializer *i, const char *buf, size_t len)
+ssize_t parse_c_ilz_ctx(struct c_ilz_ctx *i, const char *buf, size_t len)
 {
 	size_t consumed = 0;
 	ssize_t p;
