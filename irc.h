@@ -68,6 +68,7 @@ struct irc_operation {
 	/* XXX: we probably need a destructor */
 };
 
+#define SLM(id, str) .id = str, .id##_len = strlen(str)
 struct irc_connection {
 	ev_io w;
 
@@ -80,6 +81,8 @@ struct irc_connection {
 	const char *realname;
 	const char *user;
 	const char *pass;
+
+	size_t nick_len;
 
 	/* (struct irc_operation *) */
 	tommy_hashlin operations;
@@ -166,7 +169,7 @@ void irc_add_operation(struct irc_connection *c, struct irc_operation *op);
 	}
 
 /* must be called before callbacks are added */
-void irc_init_cb(struct irc_connection *c);
+void irc_init(struct irc_connection *c);
 
 /*
  * utility
