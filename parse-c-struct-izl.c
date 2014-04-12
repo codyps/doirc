@@ -19,32 +19,32 @@
 } while (0)
 
 #define R (len > consumed ? len - consumed : 0)
-static ssize_t parse_id(const char *buf, size_t len, char **elem, size_t *elem_len)
+static ssize_t parse_id(const char *buf, size_t len, char **elem)
 {
 	size_t consumed = 0;
-	size_t el = 0;
 	const char *e = buf + consumed;
-	*elem = (char *)e;
-	el = 0;
 
 	HAVE_BYTE();
+
 	/* must have at least 1 letter */
-	if (!isalpha(e[el]))
+	if (!isalpha(e[consumed]))
 		return -1;
 
-	el ++;
+	consumed++;
 
 	for (;;) {
+		/* we're at the end of input, assume we have a whole id */
 		if (consumed > len)
 			break;
 
-		int b = e[el];
+		int b = e[consumed];
 		if (!(isalpha(b) || isdigit(b) || strchr("$_", b)))
 			break;
-		el++;
+
+		consumed++;
 	}
 
-	*elem_len = el;
+	*elem = (char *)e;
 	return consumed;
 }
 
@@ -162,9 +162,10 @@ static ssize_t parse_elem(struct c_struct_initializer *i, const char *buf, size_
 
 	EXPECT('.');
 	HAVE_BYTE();
-	p = parse_id(buf + consumed, R, &id, &id_len);
+	p = parse_id(buf + consumed, R, &id);
 	if (p < 0)
 		return p;
+	p = id_len;
 	consumed += p;
 	EXPECT('=');
 	HAVE_BYTE();
