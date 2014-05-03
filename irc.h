@@ -23,6 +23,14 @@ static const char * const irc_num_cmds[] = {
 #undef RPL
 };
 
+/* from RFC 2812 */
+enum irc_proto {
+	IRC_MAX_SERVER_NAME_LENGTH = 63,
+	IRC_MAX_NICK_LENGTH = 9, /* clients should accept longer */
+	IRC_MAX_PARAMETERS = 15,
+	IRC_MAX_LINE_LENGTH = 510,
+};
+
 enum irc_user_mode {
 	IRC_UM_i = 1 << 0,
 	IRC_UM_w = 1 << 1,

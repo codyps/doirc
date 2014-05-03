@@ -104,29 +104,45 @@ static int cmd_help(struct irc_connection *c, const struct msg_source *src, cons
 	return 0;
 }
 
-#define FMT_TOMMY_NODE "{ .data = %p, .key = %#llx, .next = %p, .prev = %p }"
-#define EXP_TOMMY_NODE(n_) (n_).data, (unsigned long long)(n_).key, (n_).next, (n_).prev
-
-#define EXP_TOMMY_HASHLIN(hl_)	(hl_).bucket_bit, (hl_).bucket_max,	\
-		(hl_).bucket_mask, (hl_).bucket_mac, (hl_).low_max,	\
-		(hl_).low_mask, (hl_).split, (hl_).state, (hl_).count
-#define FMT_TOMMY_HASHLIN "{ .bucket_bit=0x%x, .bucket_max=%u, .bucket_mask=0x%x, .bucket_mac=%u, .low_max=%u, .low_mask=0x%x, .split=%u, .state=%u, .count=%u }"
-
-static int cmd_ping(struct irc_connection *c, const struct msg_source *src,
+static int cmd_ring(struct irc_connection *c, const struct msg_source *src,
 		const char *cmd, size_t cmd_len, const char *msg, size_t msg_len)
 {
 	struct irc_usertrack_channel *ut = &con_to_ctx(c)->ut;
 	struct irc_user *u;
 	tommy_node *node;
 	unsigned i, j;
+	char buf[IRC_MAX_LINE_LENGTH];
+	unsigned used = 0;
 
-	printf("|||| "FMT_TOMMY_HASHLIN"\n", EXP_TOMMY_HASHLIN(ut->users));
+	if (!ut->users.count)
+		return 0;
 
+	used += snprintf(buf, ARRAY_SIZE(buf), "PRIVMSG %.*s :", (int)ut->channel_len, ut->channel);
 	irc_usertrack_channel_for_each_user(ut, u, node, i, j) {
-		printf("|| %.*s\n", (int)u->nick_len, u->nick);
+		used += snprintf(buf + used, SUB_SAT(ARRAY_SIZE(buf), used),
+				"%.*s ", (int)u->nick_len, u->nick);
 	}
 
-	return 0;
+	if (msg_len == 0) {
+		msg = "RING";
+		msg_len = strlen(msg);
+	}
+
+	used += snprintf(buf + used, SUB_SAT(ARRAY_SIZE(buf), used),
+			": %.*s", (int)msg_len, msg);
+
+	unsigned rem = SUB_SAT(ARRAY_SIZE(buf), used);
+	/* grab 2 spaces for termination */
+	while (rem < 2) {
+		rem++;
+		used--;
+	}
+
+	buf[used] = '\r';
+	buf[used + 1] = '\n';
+	used += 2;
+
+	return irc_cmd(c, buf, MIN(used, ARRAY_SIZE(buf)));
 }
 
 static int cmd_exec(struct irc_connection *c, const struct msg_source *src,
@@ -142,7 +158,7 @@ static int cmd_exec(struct irc_connection *c, const struct msg_source *src,
 struct command commands [] = {
 	CMD(unknown), /* this is triggered when the command isn't recognized */
 	CMD(help),
-	CMD(ping),
+	CMD(ring),
 	CMD(exec),
 };
 
@@ -160,7 +176,7 @@ static void run_command(struct irc_connection *c, struct msg_source *src,
 		arg = NULL;
 	} else {
 		arg = cmd_end + 1;
-		arg_len = cmdmsg_len - cmd_len - 2;
+		arg_len = cmdmsg_len - cmd_len - 1;
 	}
 	for (i = 0; i < ARRAY_SIZE(commands); i++) {
 		if (memeq(cmd_start, cmd_len, commands[i].cmd, commands[i].cmd_len)) {
