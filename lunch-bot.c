@@ -284,33 +284,33 @@ static int on_kick(struct irc_connection *c, struct irc_operation *op,
 	return 0;
 }
 
-static const char *channel = "#test-lunch-bot";
-
 static int on_connect(struct irc_connection *c, struct irc_operation *op,
 		char const *prefix, size_t prefix_len,
 		char const *remain, size_t remain_len)
 {
-	irc_cmd_join_(c, channel);
+	irc_cmd_join_(c, con_to_ctx(c)->ut.channel);
 	return 0;
 }
 
 int main(int argc, char **argv)
 {
 	err_set_progname(argv[0]);
-	if (argc != 3) {
-		fprintf(stderr, "usage: %s <server> <port>\n", argv[0]);
+	if (argc != 5) {
+		fprintf(stderr, "usage: %s <user> <channel> <server> <port>\n", argv[0]);
 		return -1;
 	}
 
+	const char *channel = argv[2];
+
 	struct irc_ctx c = {
 		.c = {
-			.server = argv[1],
-			.port   = argv[2],
+			.server = argv[3],
+			.port   = argv[4],
 
-			SLM(nick, "lunch-bot"),
+			SLM(nick, argv[1]),
 
-			.user = "lunch-bot",
-			.realname = "lunch-bot",
+			.user = argv[1],
+			.realname = argv[1],
 		},
 		.prgm = argv[0],
 	};
