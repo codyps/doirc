@@ -5,3 +5,4 @@ A compact irc library and some test programs.
  - factor some type of command framework out of lunch-bot for reuse
  - PRIVMSG line-continuation framework.
  - configuration files?
+ - library support for server operation.
