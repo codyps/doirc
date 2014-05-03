@@ -313,7 +313,7 @@ size_t irc_dump_state(struct irc_connection *c, char *buf, size_t len)
 #undef R
 }
 
-static int irc_load_state(struct irc_connection *c, const char *buf, size_t len)
+int irc_load_state(struct irc_connection *c, const char *buf, size_t len)
 {
 	return -1;
 }
@@ -495,7 +495,7 @@ static int irc_net_connect(struct irc_connection *c)
 {
 	/* TODO: use cached dns info? */
 	struct addrinfo *res = net_client_lookup(c->server, c->port,
-			AF_UNSPEC, SOCK_STREAM);
+			AF_INET, SOCK_STREAM);
 	if (!res)
 		return -1;
 

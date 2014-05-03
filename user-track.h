@@ -66,41 +66,7 @@ static inline void *tommy_hashlin_pos_safe(tommy_hashlin *hl, size_t pos)
 	return node;
 }
 
-/*
- * @hl__     : a (tommy_hashlin *)
- * @bucket__ : a (tommy_node *)
- * @pos__    : a (size_t) which is set to the current "position" of the obj__ in
- *	       the hash table.
- */
-#define tommy_hashlin_for_each_bucket(hl__, bucket__, pos__)			\
-	for ((pos__) = 0, (bucket__) = tommy_hashlin_pos_safe((hl__), (pos__));	\
-	     (bucket__);								\
-	     (pos__)++,   (bucket__) = tommy_hashlin_pos_safe((hl__), (pos__)))
-
-/*
- * tommy_node *list__;
- * tommy_node *node__;
- */
-#define tommy_list_for_each(list__, node__)	\
-	for ((node__) = (list__);		\
-	     (node__);				\
-	     (node__) = (node__)->next)
-
-/*
- * XXX: break skips a bucket, it doesn't break out of the entire loop as
- *      expected. Use 'goto' to escape the loop.
- *
- * tommy_hashlin *hl_;
- * tommy_node *node_;   // cursor
- * tommy_node *bucket_;
- * size_t pos_;
- */
-#define tommy_hashlin_for_each(hl_, node_, bucket_, pos_)		\
-	tommy_hashlin_for_each_bucket((hl_), (bucket_), (pos_))		\
-	tommy_list_for_each((bucket_), (node_))
-
-#define irc_usertrack_channel_for_each_user(utc_, user_, node_, bucket_, pos_)	\
-	tommy_hashlin_for_each(&(utc_)->users, node_, bucket_, pos_)		\
-	for ((user_) = (node_)->data; (user_); (user_) = NULL)
+#define irc_usertrack_channel_for_each_user(utc_, user_, node_, i_, j_)	\
+	tommy_hashlin_for_each_entry(&(utc_)->users, user_, node_, i_, j_)		\
 
 #endif

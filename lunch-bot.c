@@ -8,6 +8,7 @@
 #include <ccan/array_size/array_size.h>
 #include <ccan/container_of/container_of.h>
 
+#include <penny/print.h>
 #include <penny/mem.h>
 
 #include <stdio.h>
@@ -98,6 +99,7 @@ static int cmd_unknown(struct irc_connection *c, const struct msg_source *src, c
 
 static int cmd_help(struct irc_connection *c, const struct msg_source *src, const char *cmd, size_t cmd_len, const char *msg, size_t msg_len)
 {
+	printf("HELP: %.*s\n", (int)src->user_len, src->user);
 	irc_cmd_privmsg_fmt(c, src->user, src->user_len, "HI\n");
 	return 0;
 }
@@ -115,12 +117,12 @@ static int cmd_ping(struct irc_connection *c, const struct msg_source *src,
 {
 	struct irc_usertrack_channel *ut = &con_to_ctx(c)->ut;
 	struct irc_user *u;
-	tommy_node *bucket, *node;
-	size_t pos;
+	tommy_node *node;
+	unsigned i, j;
 
 	printf("|||| "FMT_TOMMY_HASHLIN"\n", EXP_TOMMY_HASHLIN(ut->users));
 
-	irc_usertrack_channel_for_each_user(ut, u, node, bucket, pos) {
+	irc_usertrack_channel_for_each_user(ut, u, node, i, j) {
 		printf("|| %.*s\n", (int)u->nick_len, u->nick);
 	}
 
@@ -150,7 +152,7 @@ static void run_command(struct irc_connection *c, struct msg_source *src,
 	size_t i;
 	const char *cmd_start = cmdmsg;
 	const char *cmd_end = memchr(cmd_start, ' ', cmdmsg_len - 1);
-	size_t cmd_len = cmd_end ? cmd_end - cmd_start : cmdmsg_len - 1;
+	size_t cmd_len = cmd_end ? cmd_end - cmd_start : cmdmsg_len;
 	const char *arg;
 	size_t arg_len;
 	if (!cmd_end) {
@@ -217,16 +219,17 @@ static int do_privmsg(struct irc_connection *c, struct irc_operation *op,
 			(msg_len - c->nick_len) > 0 && !isalnum(*(msg + c->nick_len))) {
 		const char *cmd_start = msg + c->nick_len + 1;
 		size_t remain_len = msg_len - c->nick_len - 1;
-		/* scan until we get a non-punc char */
-		while (remain_len && !ispunct(*cmd_start)) {
+
+		/* scan until we get a non-punc, non-space char */
+		while (remain_len && (ispunct(*cmd_start) || isspace(*cmd_start))) {
 			cmd_start ++;
 			remain_len --;
 		}
 
 		run_command(c, &msg_src, cmd_start, remain_len);
-	}
-	if (msg_len > 0 && *msg == cmd_magic)
+	} else if (msg_len > 0 && *msg == cmd_magic) {
 		run_command(c, &msg_src, msg + 1, msg_len - 1);
+	}
 
 	return 0;
 }

@@ -173,7 +173,7 @@ void irc_init(struct irc_connection *c);
 
 /* state managment */
 size_t irc_dump_state(struct irc_connection *c, char *buf, size_t len);
-int irc_load_state(struct irc_connection *c, char *buf, size_t len);
+int irc_load_state(struct irc_connection *c, const char *buf, size_t len);
 
 /*
  * utility
