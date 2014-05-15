@@ -363,17 +363,9 @@ static int process_pkt(struct irc_connection *c, char *start, size_t len)
 	if (command_len == 3 && isdigit(*command)
 				&& isdigit(*(command+1))
 				&& isdigit(*(command+2))) {
-		char const *name;
 		unsigned cmd_val = (*(command) - '0') * 100
 			+ (*(command + 1) - '0') * 10
 			+ (*(command + 2) - '0');
-		if (cmd_val >= ARRAY_SIZE(irc_num_cmds))
-			name = "(out of bounds)";
-		else
-			name = irc_num_cmds[cmd_val];
-
-		if (!name)
-			name = "(unknown)";
 
 		struct irc_operation *op = tommy_hashlin_search(&c->operations,
 				compare_num_to_op_num,
