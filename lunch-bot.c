@@ -114,6 +114,8 @@ static int PRINTF_FMT(3,4) msg_reply_fmt(struct irc_connection *c, const struct 
 	} else if (src->src == MS_CHAN) {
 		d = src->channel;
 		d_len = src->channel_len;
+	} else {
+		return -1;
 	}
 
 	va_start(va, fmt);
