@@ -62,13 +62,13 @@ int privmsg_helper(struct irc_connection *c, struct irc_operation *op,
 	pr_debug(2, "privmsg recipients: ");
 	struct arg a;
 	size_t dest_ct = 0;
-	struct arg *dests;
+	struct arg *dests = NULL;
 	irc_for_each_comma_arg(a, args[0]) {
 		pr_debug(2, ":: %.*s ", (int)a.len, a.data);
 		/* HAHAHA */
 		dests = alloca(sizeof(*dests));
 		*dests = a;
-		dest_ct ++;
+		dest_ct++;
 	}
 	pr_debug(2, "\n");
 
