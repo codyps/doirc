@@ -135,7 +135,7 @@ struct command {
 #define CMD_(name, func) { .cmd = #name, .cmd_len = sizeof(#name) - 1, .cb = func }
 #define CMD(name) CMD_(name, cmd_##name)
 
-int cmd_magic = '.';
+static int cmd_magic = '.';
 
 #define OWNER(n) { .name = n, .name_len = sizeof(n) - 1 }
 static struct owner {
@@ -218,7 +218,7 @@ static int cmd_exec(struct irc_connection *c, const struct msg_source *src,
 	return 0;
 }
 
-struct command commands [] = {
+static struct command commands [] = {
 	CMD(unknown), /* this is triggered when the command isn't recognized */
 	CMD(help),
 	CMD(ring),

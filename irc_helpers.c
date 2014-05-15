@@ -36,7 +36,7 @@ static struct arg first_comma_arg(const char *start, const char *end)
 static struct arg next_comma_arg(struct arg a, const char *end)
 {
 	if (a.data + a.len >= end)
-		return (struct arg) {0, 0};
+		return (struct arg) {NULL, 0};
 	else
 		return first_comma_arg(a.data + a.len + 1, end);
 }
