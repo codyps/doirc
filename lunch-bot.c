@@ -8,6 +8,8 @@
 #include <ccan/array_size/array_size.h>
 #include <ccan/container_of/container_of.h>
 
+#include <avro.h>
+
 #include <penny/print.h>
 #include <penny/mem.h>
 
@@ -41,6 +43,65 @@ static struct irc_ctx *con_to_ctx(struct irc_connection *c)
 {
 	return container_of(c, struct irc_ctx, c);
 }
+
+#if 0
+static avro_schema_t irc_connection_schema(void)
+{
+	avro_schema_t con = avro_schema_record("irc_connection", NULL);
+	avro_schema_t field;
+
+	field = avro_schema_int();
+	avro_schema_record_field_append(con, "fd", field);
+	avro_schema_decref(field);
+
+	field = avro_schema_bytes();
+	avro_schema_record_field_append(con, "in_buf", field);
+	avro_schema_decref(field);
+
+	field = avro_schema_string();
+	avro_schema_record_field_append(con, "server", field);
+	avro_schema_decref(field);
+
+	field = avro_schema_string();
+	avro_schema_record_field_append(con, "port", field);
+	avro_schema_decref(field);
+
+	field = avro_schema_string();
+	avro_schema_record_field_append(con, "nick", field);
+	avro_schema_decref(field);
+
+	field = avro_schema_string();
+	avro_schema_record_field_append(con, "realname", field);
+	avro_schema_decref(field);
+
+	field = avro_schema_string();
+	avro_schema_record_field_append(con, "user", field);
+	avro_schema_decref(field);
+
+	field = avro_schema_string();
+	avro_schema_record_field_append(con, "pass", field);
+	avro_schema_decref(field);
+
+	return con;
+}
+
+static avro_schema_t irc_ctx_schema(void)
+{
+	avro_schema_t ctx = avro_schema_record("irc_ctx", NULL);
+
+	avro_schema_t field = irc_connection_schema();
+	avro_schema_record_field_append(ctx, "con", field);
+	avro_schema_decref(field);
+
+	return ctx;
+}
+
+static int irc_ctx_load(struct irc_ctx *ctx, const char *path)
+{
+	avro_file_reader_t reader;
+	int r = avro_file_reader(fp, &reader);
+}
+#endif
 
 static int PRINTF_FMT(3,4) msg_reply_fmt(struct irc_connection *c, const struct msg_source *src, const char *fmt, ...)
 {
