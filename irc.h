@@ -78,6 +78,7 @@ struct irc_operation {
 
 #define SLM(id, str) .id = str, .id##_len = strlen(str)
 struct irc_connection {
+	/* we read/write over a fd */
 	ev_io w;
 
 	/* network connection */
