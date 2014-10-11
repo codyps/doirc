@@ -8,7 +8,7 @@
 #include <ccan/array_size/array_size.h>
 #include <ccan/container_of/container_of.h>
 
-#include <avro.h>
+//#include <avro.h>
 
 #include <penny/print.h>
 #include <penny/mem.h>
